@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a deployed MVP of Parallax: a ZachD-style procedural jet-engine cutaway with AI-generated lesson narration, source-grounded refresh, component-aware Q&A, quiz, and targeted re-teach replay.
+**Goal:** Build a deployed MVP of Parallax: a ZachD-style procedural jet-engine cutaway with a visible Lesson Compiler agent, source-grounded lesson generation, component-aware tutor Q&A, quiz, and targeted re-teach replay.
 
-**Architecture:** The app is a Next.js frontend with a React Three Fiber renderer and API routes for agent orchestration. The 3D jet engine is deterministic and procedural; the AI only generates validated lesson JSON and answers using component/lesson context. Exa provides live source refresh, AWS S3 stores cached lesson JSON/audio, and MediaPipe is an optional secondary input that emits the same selection events as mouse/touch.
+**Architecture:** The app is a Next.js frontend with a React Three Fiber renderer and API routes for agent orchestration. The 3D jet engine is deterministic and procedural; the AI generates validated lesson JSON through a Lesson Compiler pipeline and answers live questions through a Runtime Tutor agent. Exa provides source grounding, AWS S3 stores cached lesson JSON/audio, and MediaPipe is an optional secondary input that emits the same selection events as mouse/touch.
 
 **Tech Stack:** Next.js, TypeScript, React Three Fiber, Three.js, Zod, Vercel AI SDK or Vercel AI Gateway, Exa API, AWS S3, optional AWS Polly, optional MediaPipe Tasks Vision.
 
@@ -17,7 +17,8 @@ Create this app structure from a fresh Next.js scaffold:
 - `app/page.tsx` — main two-panel demo shell.
 - `app/layout.tsx` — metadata and global app wrapper.
 - `app/globals.css` — global layout, canvas, and panel styling.
-- `app/api/lesson/route.ts` — returns cached or Exa-refreshed lesson JSON.
+- `app/api/lesson/route.ts` — returns cached lesson JSON.
+- `app/api/compile/route.ts` — runs the critical Lesson Compiler v1 pipeline with Exa retrieval, mechanism analysis, template mapping, and schema validation.
 - `app/api/ask/route.ts` — answers user questions with selected component context.
 - `app/api/quiz/route.ts` — diagnoses wrong quiz answers and returns re-teach command.
 - `components/demo/ParallaxDemo.tsx` — top-level client state orchestration.
@@ -33,7 +34,8 @@ Create this app structure from a fresh Next.js scaffold:
 - `lib/engine/engineConfig.ts` — fixed component IDs, positions, camera presets, explode vectors.
 - `lib/engine/lessonTypes.ts` — TypeScript types and Zod schemas for lesson JSON.
 - `lib/engine/commands.ts` — renderer command types and reducers.
-- `lib/agent/prompts.ts` — system prompts for lesson generation, Q&A, and re-teaching.
+- `lib/agent/prompts.ts` — system prompts for lesson compilation, Q&A, and re-teaching.
+- `lib/agent/compiler.ts` — controlled Lesson Compiler v1 pipeline.
 - `lib/agent/exa.ts` — Exa search wrapper.
 - `lib/aws/s3.ts` — S3 cache helpers.
 - `data/cached-jet-engine-lesson.json` — fallback hero lesson.
@@ -315,35 +317,66 @@ Show the quiz after the lesson reaches the final step. Wrong answers dispatch `s
 
 Expected: selecting a component updates the right panel, and wrong quiz answer starts the re-teach state.
 
-## Task 6: Add Lesson API With Cached Default And Exa Refresh
+## Task 6: Add Critical Lesson Compiler API With Exa Grounding
 
 **Files:**
 - Create: `lib/agent/exa.ts`
 - Create: `lib/agent/prompts.ts`
+- Create: `lib/agent/compiler.ts`
 - Create: `app/api/lesson/route.ts`
+- Create: `app/api/compile/route.ts`
 - Modify: `components/demo/ParallaxDemo.tsx`
 
-- [ ] **Step 1: Implement cached default route**
+- [ ] **Step 1: Implement cached lesson route**
 
-`GET /api/lesson?mode=cached` returns `data/cached-jet-engine-lesson.json` after schema validation.
+`GET /api/lesson` returns `data/cached-jet-engine-lesson.json` after schema validation. This is the reliable boot path.
 
 - [ ] **Step 2: Implement Exa wrapper**
 
-`searchJetEngineSources()` searches for authoritative pages on turbofan engine stages, compressor/turbine shaft coupling, and thrust generation.
+`searchJetEngineSources()` searches for authoritative pages on turbofan engine stages, compressor/turbine shaft coupling, and thrust generation. Return normalized source objects with `title`, `url`, and `summary`.
 
-- [ ] **Step 3: Implement refresh route**
+- [ ] **Step 3: Implement compiler prompt stages**
 
-`GET /api/lesson?mode=refresh` calls Exa, asks the model to summarize the sources into the existing lesson schema, validates it, and falls back to cached JSON if invalid.
+Create prompts for the visible compiler stages:
 
-- [ ] **Step 4: Surface activity log**
+- `research_summary`: summarize Exa results into facts.
+- `mechanism_analysis`: extract parts, flow direction, and cause/effect links.
+- `template_mapping`: map mechanism stages to known `jet_engine` components and allowed animations.
+- `lesson_json`: emit validated lesson JSON.
+
+- [ ] **Step 4: Implement compiler pipeline**
+
+`compileJetEngineLesson()` should run:
+
+1. Append log `Searching Exa for jet engine mechanism sources`.
+2. Call `searchJetEngineSources()`.
+3. Append log `Extracting mechanism stages`.
+4. Use Vercel AI SDK structured output to produce mechanism notes.
+5. Append log `Mapping stages to jet_engine template`.
+6. Generate lesson JSON constrained to known components, camera presets, and animations.
+7. Validate with `lessonSchema`.
+8. Return the compiled lesson plus trace events.
+
+- [ ] **Step 5: Implement compile route**
+
+`POST /api/compile` runs `compileJetEngineLesson()`. If Exa, model output, or validation fails, return the cached lesson with a trace entry explaining the fallback.
+
+- [ ] **Step 6: Surface activity log**
 
 Panel logs should show:
 
 - loading cached lesson
+- compiling with Exa
 - searching Exa
-- grounding sources
+- extracting mechanism stages
+- mapping to jet engine template
 - validating lesson JSON
+- writing/using cache if available
 - using cached fallback if needed
+
+- [ ] **Step 7: Verify compiler demo path**
+
+Click `Compile with Exa`. Expected: the right panel shows the compiler trace, the app receives valid lesson JSON, and the lesson starts from the compiled artifact or a clearly labeled cached fallback.
 
 ## Task 7: Add Component-Aware Q&A
 
@@ -557,12 +590,13 @@ Then deploy through Vercel.
 
 Record the flow:
 
-1. Refresh with Exa.
-2. Lesson starts.
-3. Select compressor.
-4. Ask selected-component question.
-5. Answer quiz wrong.
-6. Re-teach replay isolates compressor, shaft, turbine.
+1. Compile with Exa.
+2. Activity log shows research, mechanism analysis, template mapping, validation, and cache/fallback status.
+3. Lesson starts.
+4. Select compressor.
+5. Ask selected-component question.
+6. Answer quiz wrong.
+7. Re-teach replay isolates compressor, shaft, turbine.
 
 - [ ] **Step 4: Build deck**
 
@@ -591,7 +625,7 @@ Create `.ppt` or `.keynote` with embedded screen recording. Do not rely on a liv
 
 ### Hours 16-22
 
-- Add Exa refresh and activity log.
+- Add Lesson Compiler v1 with Exa retrieval, mechanism analysis, template mapping, schema validation, and visible activity log.
 - Add component-aware Q&A.
 - Add push-to-talk voice with text fallback.
 
@@ -619,7 +653,8 @@ Spec coverage:
 
 - Procedural ZachD-style jet engine: covered by Tasks 3, 4, and 12.
 - AI-generated lesson/narration/quiz: covered by Tasks 2, 6, 7, and 9.
-- Exa hybrid refresh: covered by Task 6.
+- Critical Lesson Compiler v1: covered by Task 6.
+- Exa hybrid compilation/refresh: covered by Task 6.
 - Component-aware agent: covered by Tasks 4, 5, and 7.
 - Push-to-talk voice: covered by Task 8.
 - MediaPipe as secondary input: covered by Task 10.
