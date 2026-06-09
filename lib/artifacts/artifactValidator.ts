@@ -19,6 +19,27 @@ const forbiddenNetworkPatterns = [
   /\bimport\s*\(/i,
 ];
 
+function syntaxErrorMessage(source: string): string | null {
+  try {
+    new Function(
+      "THREE",
+      "scene",
+      "camera",
+      "renderer",
+      "root",
+      "controls",
+      "registerComponent",
+      "setWalkthroughSteps",
+      "setStatus",
+      "fitCameraTo",
+      source,
+    );
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 function makeArtifactId(topic: string): string {
   const slug = topic.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40) || "topic";
   const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -51,6 +72,11 @@ export function validateSceneSource(source: string): ArtifactValidationResult {
 
   if (!/setWalkthroughSteps\s*\(/.test(source)) {
     return { ok: false, error: "Generated scene source must call setWalkthroughSteps." };
+  }
+
+  const syntaxError = syntaxErrorMessage(source);
+  if (syntaxError) {
+    return { ok: false, error: `Generated scene source has invalid JavaScript syntax: ${syntaxError}` };
   }
 
   return { ok: true };

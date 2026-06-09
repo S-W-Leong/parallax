@@ -16,6 +16,7 @@ sceneSource contract:
 - You may define window.setExploded, window.resetCamera, window.startWalkthrough, or window.pauseWalkthrough when custom behavior helps.
 - Use only deterministic local geometry, materials, canvas textures, math, and animation.
 - Do not use fetch, XMLHttpRequest, WebSocket, EventSource, dynamic import, script tags, iframe, localStorage, cookies, or remote assets.
+- Use valid JavaScript identifiers only. Never name variables, functions, or object properties with identifiers that start with a number, such as 3DModel. Prefer names like model3D or reactorModel.
 
 Make the artifact complete in one shot. Prefer clear component relationships, labels, walkthrough pacing, and camera targets over visual excess.
 

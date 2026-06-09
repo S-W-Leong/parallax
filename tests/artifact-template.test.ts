@@ -49,4 +49,61 @@ setWalkthroughSteps([{ id: "intro", title: "Field shape", narration: "Field line
     expect(html).toMatch(/<\\+\/script>/);
     expect(html).toContain("&lt;/script&gt;&lt;img");
   });
+
+  it("exposes an OrbitControls-compatible target for generated scene code", () => {
+    const html = renderArtifactHtml({
+      id: "artifact-3",
+      title: "Camera Controls Lab",
+      topic: "controls",
+      summary: "Checks the runtime controls contract.",
+      sceneSource: `
+controls.target.set(1, 2, 3);
+const marker = new THREE.Group();
+root.add(marker);
+registerComponent("a", "A", marker, {});
+registerComponent("b", "B", marker, {});
+registerComponent("c", "C", marker, {});
+setWalkthroughSteps([{id:"s",title:"S",narration:"N",targetComponentIds:["a"]}]);
+`,
+      components: [
+        { id: "a", label: "A" },
+        { id: "b", label: "B" },
+        { id: "c", label: "C" },
+      ],
+      walkthroughSteps: [{ id: "s", title: "S", narration: "N", targetComponentIds: ["a"] }],
+    });
+
+    expect(html).toContain("target: new THREE.Vector3()");
+    expect(html).toContain("fitCameraToRegisteredComponents()");
+    expect(html).toContain("controls.target.copy(target)");
+  });
+
+  it("fits the camera using object bounds instead of a fixed offset", () => {
+    const html = renderArtifactHtml({
+      id: "artifact-4",
+      title: "Large Object Lab",
+      topic: "camera fit",
+      summary: "Checks large object framing.",
+      sceneSource: `
+const large = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 8), new THREE.MeshStandardMaterial());
+root.add(large);
+registerComponent("large", "Large model", large, {});
+registerComponent("left", "Left", large, {});
+registerComponent("right", "Right", large, {});
+setWalkthroughSteps([{id:"s",title:"S",narration:"N",targetComponentIds:["large"]}]);
+`,
+      components: [
+        { id: "large", label: "Large model" },
+        { id: "left", label: "Left" },
+        { id: "right", label: "Right" },
+      ],
+      walkthroughSteps: [{ id: "s", title: "S", narration: "N", targetComponentIds: ["large"] }],
+    });
+
+    expect(html).toContain("box.getSize(new THREE.Vector3())");
+    expect(html).toContain("camera.fov");
+    expect(html).toContain("camera.updateProjectionMatrix()");
+    expect(html).toContain("fitCameraToRegisteredComponents");
+    expect(html).toContain("Array.from(registered.values())");
+  });
 });

@@ -50,7 +50,7 @@ export function createEmptySession(): LearningSession {
 export function sessionReducer(state: LearningSession, action: SessionAction): LearningSession {
   switch (action.type) {
     case "user_message":
-      return { ...state, messages: [...state.messages, message("user", action.content)] };
+      return { ...state, messages: [...state.messages, message("user", action.content, state.activeArtifactId ?? undefined)] };
     case "assistant_message":
       return { ...state, messages: [...state.messages, message("assistant", action.content, action.artifactId)] };
     case "system_event":

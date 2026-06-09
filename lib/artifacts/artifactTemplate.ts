@@ -215,7 +215,13 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
       let labelsVisible = true;
       let exploded = false;
       let dragStart = null;
-      const controls = { enabled: true };
+      const controls = {
+        enabled: true,
+        target: new THREE.Vector3(),
+        update() {
+          camera.lookAt(this.target);
+        }
+      };
 
       window.scene = scene;
       window.camera = camera;
@@ -268,15 +274,64 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         return box.getCenter(new THREE.Vector3());
       }
 
-      window.fitCameraTo = function fitCameraTo(object3D, position) {
-        if (!ensureObject(object3D)) return;
-        const target = centerOf(object3D);
+      function boundsOf(object3D) {
+        const box = new THREE.Box3().setFromObject(object3D);
+        if (box.isEmpty()) {
+          return { center: new THREE.Vector3(), size: new THREE.Vector3(1, 1, 1), radius: 1 };
+        }
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        return { center, size, radius: Math.max(size.length() * 0.5, 1) };
+      }
+
+      function boundsOfObjects(objects) {
+        const box = new THREE.Box3();
+        let hasBounds = false;
+        for (const object3D of objects) {
+          if (!ensureObject(object3D)) continue;
+          const nextBox = new THREE.Box3().setFromObject(object3D);
+          if (nextBox.isEmpty()) continue;
+          box.union(nextBox);
+          hasBounds = true;
+        }
+        if (!hasBounds) return boundsOf(root);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        return { center, size, radius: Math.max(size.length() * 0.5, 1) };
+      }
+
+      function lookAtTarget(target) {
+        controls.target.copy(target);
+        controls.update();
+      }
+
+      function fitCameraToBounds(bounds, position) {
+        const target = bounds.center;
         if (Array.isArray(position) && position.length === 3) {
           camera.position.set(position[0], position[1], position[2]);
         } else {
-          camera.position.copy(target).add(new THREE.Vector3(3.4, 2.2, 4.2));
+          const direction = new THREE.Vector3(0.72, 0.48, 0.9).normalize();
+          const fov = camera.fov * Math.PI / 180;
+          const aspect = Math.max(camera.aspect || 1, 0.1);
+          const fitHeightDistance = bounds.size.y / 2 / Math.tan(fov / 2);
+          const fitWidthDistance = bounds.size.x / 2 / Math.tan(fov / 2) / aspect;
+          const distance = Math.max(fitHeightDistance, fitWidthDistance, bounds.size.z * 1.15, 3);
+          camera.position.copy(target).add(direction.multiplyScalar(distance * 1.35));
         }
-        camera.lookAt(target);
+        camera.near = Math.max(0.01, bounds.radius / 120);
+        camera.far = Math.max(1000, bounds.radius * 80);
+        camera.updateProjectionMatrix();
+        lookAtTarget(target);
+      }
+
+      window.fitCameraTo = function fitCameraTo(object3D, position) {
+        if (!ensureObject(object3D)) return;
+        fitCameraToBounds(boundsOf(object3D), position);
+      };
+
+      function fitCameraToRegisteredComponents() {
+        const componentObjects = Array.from(registered.values()).map((component) => component.object3D);
+        fitCameraToBounds(boundsOfObjects(componentObjects));
       };
 
       function renderStep(emit) {
@@ -289,7 +344,7 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
           window.fitCameraTo(component.object3D, step.camera && step.camera.position);
         } else if (step.camera && step.camera.position) {
           camera.position.set(step.camera.position[0], step.camera.position[1], step.camera.position[2]);
-          if (step.camera.lookAt) camera.lookAt(step.camera.lookAt[0], step.camera.lookAt[1], step.camera.lookAt[2]);
+          if (step.camera.lookAt) lookAtTarget(new THREE.Vector3(step.camera.lookAt[0], step.camera.lookAt[1], step.camera.lookAt[2]));
         }
         setStatus("Step " + (currentStepIndex + 1) + " of " + walkthroughSteps.length + ": " + step.title);
         if (emit) postArtifactEvent({ type: "walkthrough_step_changed", stepId: step.id, title: step.title });
@@ -308,9 +363,8 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         setStatus("Walkthrough paused");
       };
       window.resetCamera = function resetCamera() {
-        camera.position.set(5, 3, 7);
-        camera.lookAt(0, 0, 0);
         root.rotation.set(0, 0, 0);
+        fitCameraToRegisteredComponents();
         setStatus("Camera reset");
       };
       window.setLabelsVisible = function setLabelsVisible(visible) {
@@ -443,6 +497,7 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         );
         runScene(THREE, scene, camera, renderer, root, controls, window.registerComponent, window.setWalkthroughSteps, window.setStatus, window.fitCameraTo);
         window.setWalkthroughSteps(walkthroughSteps);
+        fitCameraToRegisteredComponents();
         animate();
         setStatus("Artifact ready. Drag to rotate, scroll to zoom, click parts to inspect.");
         postArtifactEvent({ type: "artifact_ready" });
