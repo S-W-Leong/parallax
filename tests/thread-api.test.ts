@@ -87,7 +87,7 @@ describe("thread API routes", () => {
     });
     mockedGetThreadStore.mockReturnValue(store);
 
-    const response = await getThread(new Request("http://localhost/api/threads/thread-1"), threadContext("thread-1"));
+    const response = await getThread(new Request("http://localhost/api/threads/thread-1?userId=demo-1"), threadContext("thread-1"));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -98,7 +98,14 @@ describe("thread API routes", () => {
         artifacts: {},
       },
     });
-    expect(store.loadThread).toHaveBeenCalledWith("thread-1");
+    expect(store.loadThread).toHaveBeenCalledWith("demo-1", "thread-1");
+  });
+
+  it("GET /api/threads/[threadId] returns 400 when userId is missing", async () => {
+    const response = await getThread(new Request("http://localhost/api/threads/thread-1"), threadContext("thread-1"));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "userId is required" });
   });
 
   it("DELETE /api/threads/[threadId]?userId=demo-1 archives a thread", async () => {

@@ -6,9 +6,12 @@ type RouteContext = {
   params: Promise<{ threadId: string }>;
 };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const { threadId } = await context.params;
-  const loaded = await getThreadStore().loadThread(threadId);
+  const url = new URL(request.url);
+  const userId = url.searchParams.get("userId");
+  if (!userId) return NextResponse.json({ error: "userId is required" }, { status: 400 });
+  const loaded = await getThreadStore().loadThread(userId, threadId);
   return NextResponse.json({ session: createSessionFromThread(loaded) });
 }
 

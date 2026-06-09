@@ -1,6 +1,6 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { ArtifactRecord, ChatMessage } from "@/lib/artifacts/artifactTypes";
 import { readAwsStorageConfig } from "./awsConfig";
 import {
@@ -35,7 +35,7 @@ export type LoadedThread = {
 export type ThreadStore = {
   createThread(input: CreateThreadInput): Promise<PersistedThreadSummary>;
   listThreads(userId: string): Promise<PersistedThreadSummary[]>;
-  loadThread(threadId: string): Promise<LoadedThread>;
+  loadThread(userId: string, threadId: string): Promise<LoadedThread>;
   archiveThread(userId: string, threadId: string, archivedAt: string): Promise<void>;
   appendMessage(threadId: string, message: ChatMessage): Promise<void>;
   saveArtifact(threadId: string, artifact: ArtifactRecord): Promise<void>;
@@ -99,7 +99,21 @@ export class AwsThreadStore implements ThreadStore {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
-  async loadThread(threadId: string): Promise<LoadedThread> {
+  async loadThread(userId: string, threadId: string): Promise<LoadedThread> {
+    const summaryResult = await this.options.dynamo.send(
+      new GetCommand({
+        TableName: this.options.tableName,
+        Key: {
+          PK: threadOwnerKey(userId),
+          SK: threadSummaryKey(threadId),
+        },
+      }),
+    );
+    const summary = (summaryResult as { Item?: ThreadSummaryRecord }).Item;
+    if (!summary || summary.archivedAt) {
+      throw new Error("Thread not found");
+    }
+
     const result = await this.options.dynamo.send(
       new QueryCommand({
         TableName: this.options.tableName,

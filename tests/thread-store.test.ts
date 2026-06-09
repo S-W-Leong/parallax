@@ -145,46 +145,60 @@ describe("AwsThreadStore", () => {
 
   it("loads messages and hydrates artifact payloads for a thread", async () => {
     const dynamo = {
-      send: vi.fn().mockResolvedValue({
-        Items: [
-          {
-            PK: "THREAD#thread-1",
-            SK: "MESSAGE#2026-06-09T14:02:00.000Z#message-2",
-            entityType: "message",
+      send: vi
+        .fn()
+        .mockResolvedValueOnce({
+          Item: {
+            PK: "USER#demo-1",
+            SK: "THREAD#thread-1",
+            entityType: "thread",
+            userId: "demo-1",
             threadId: "thread-1",
-            id: "message-2",
-            role: "assistant",
-            content: "Here is the cell model.",
-            createdAt: "2026-06-09T14:02:00.000Z",
-            artifactId: "artifact-1",
-          },
-          {
-            PK: "THREAD#thread-1",
-            SK: "ARTIFACT#artifact-1",
-            entityType: "artifact",
-            threadId: "thread-1",
-            artifactId: "artifact-1",
-            title: "Cell Explorer",
-            topic: "cells",
-            summary: "A guided cell room.",
-            htmlS3Key: "artifacts/thread-1/artifact-1/index.html",
-            sceneSourceS3Key: "artifacts/thread-1/artifact-1/scene.js",
-            components: [{ id: "nucleus", label: "Nucleus" }],
-            walkthroughSteps: [{ id: "intro", title: "Intro", narration: "Start at the nucleus.", targetComponentIds: ["nucleus"] }],
-            createdAt: "2026-06-09T14:01:00.000Z",
-          },
-          {
-            PK: "THREAD#thread-1",
-            SK: "MESSAGE#2026-06-09T14:00:00.000Z#message-1",
-            entityType: "message",
-            threadId: "thread-1",
-            id: "message-1",
-            role: "user",
-            content: "Teach me cells",
+            title: "Cells",
             createdAt: "2026-06-09T14:00:00.000Z",
+            updatedAt: "2026-06-09T14:02:00.000Z",
           },
-        ],
-      }),
+        })
+        .mockResolvedValueOnce({
+          Items: [
+            {
+              PK: "THREAD#thread-1",
+              SK: "MESSAGE#2026-06-09T14:02:00.000Z#message-2",
+              entityType: "message",
+              threadId: "thread-1",
+              id: "message-2",
+              role: "assistant",
+              content: "Here is the cell model.",
+              createdAt: "2026-06-09T14:02:00.000Z",
+              artifactId: "artifact-1",
+            },
+            {
+              PK: "THREAD#thread-1",
+              SK: "ARTIFACT#artifact-1",
+              entityType: "artifact",
+              threadId: "thread-1",
+              artifactId: "artifact-1",
+              title: "Cell Explorer",
+              topic: "cells",
+              summary: "A guided cell room.",
+              htmlS3Key: "artifacts/thread-1/artifact-1/index.html",
+              sceneSourceS3Key: "artifacts/thread-1/artifact-1/scene.js",
+              components: [{ id: "nucleus", label: "Nucleus" }],
+              walkthroughSteps: [{ id: "intro", title: "Intro", narration: "Start at the nucleus.", targetComponentIds: ["nucleus"] }],
+              createdAt: "2026-06-09T14:01:00.000Z",
+            },
+            {
+              PK: "THREAD#thread-1",
+              SK: "MESSAGE#2026-06-09T14:00:00.000Z#message-1",
+              entityType: "message",
+              threadId: "thread-1",
+              id: "message-1",
+              role: "user",
+              content: "Teach me cells",
+              createdAt: "2026-06-09T14:00:00.000Z",
+            },
+          ],
+        }),
     };
     const s3 = {
       send: vi
@@ -194,9 +208,16 @@ describe("AwsThreadStore", () => {
     };
     const store = new AwsThreadStore({ dynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" });
 
-    const loaded = await store.loadThread("thread-1");
+    const loaded = await store.loadThread("demo-1", "thread-1");
 
     expect(dynamo.send.mock.calls[0][0].input).toMatchObject({
+      TableName: "threads-table",
+      Key: {
+        PK: "USER#demo-1",
+        SK: "THREAD#thread-1",
+      },
+    });
+    expect(dynamo.send.mock.calls[1][0].input).toMatchObject({
       TableName: "threads-table",
       KeyConditionExpression: "PK = :pk",
       ExpressionAttributeValues: {
@@ -253,6 +274,36 @@ describe("AwsThreadStore", () => {
         },
       ],
     });
+  });
+
+  it("does not load archived or missing thread summaries", async () => {
+    const s3 = { send: vi.fn().mockResolvedValue({}) };
+    const archivedDynamo = {
+      send: vi.fn().mockResolvedValue({
+        Item: {
+          PK: "USER#demo-1",
+          SK: "THREAD#thread-1",
+          entityType: "thread",
+          userId: "demo-1",
+          threadId: "thread-1",
+          title: "Cells",
+          createdAt: "2026-06-09T14:00:00.000Z",
+          updatedAt: "2026-06-09T14:02:00.000Z",
+          archivedAt: "2026-06-09T15:00:00.000Z",
+        },
+      }),
+    };
+    const missingDynamo = { send: vi.fn().mockResolvedValue({}) };
+
+    await expect(new AwsThreadStore({ dynamo: archivedDynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" }).loadThread("demo-1", "thread-1")).rejects.toThrow(
+      "Thread not found",
+    );
+    await expect(new AwsThreadStore({ dynamo: missingDynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" }).loadThread("demo-1", "thread-1")).rejects.toThrow(
+      "Thread not found",
+    );
+    expect(archivedDynamo.send).toHaveBeenCalledTimes(1);
+    expect(missingDynamo.send).toHaveBeenCalledTimes(1);
+    expect(s3.send).not.toHaveBeenCalled();
   });
 
   it("persists a message under the thread partition", async () => {
