@@ -1,6 +1,6 @@
 # SuperAI NEXT Hackathon 2026 Brief
 
-Updated on 7 June 2026 from the official details in `superai-official-details.md`, with prior public-source context retained where still useful.
+Updated on 9 June 2026 from the official SuperAI page, DoraHacks submission-guidelines page context, and `superai-official-details.md`, with prior public-source context retained where still useful.
 
 ## Executive Snapshot
 
@@ -12,6 +12,7 @@ Updated on 7 June 2026 from the official details in `superai-official-details.md
 - **Prize pool:** **Over US$200K** in prizes, credits, and resources. Awards stack, so one project can win multiple categories.
 - **Finals:** The **Top 5** teams demo live on the WEKA Stage in front of SuperAI's 10,000-person conference audience.
 - **Core requirement:** Build anything, but make it agentic. Agents need to do real work at the core of the product.
+- **Fairness rule:** Project implementation must start only after the official hacking period begins. Brainstorming before kickoff is allowed; code, designs, and prototypes are not.
 
 ## Official Theme
 
@@ -114,7 +115,7 @@ What this means for build strategy:
 
 ## Submission Requirements
 
-Deadline: **12:00 am on 11 June**, meaning teams must submit by **11:59 pm on 10 June 2026**. No late entries are allowed.
+Deadline: **12:00 am on 11 June**, meaning teams must submit by **11:59 pm on 10 June 2026**. No late entries are allowed. The DoraHacks submission-guidelines page confirms the same deadline and required submission package.
 
 Every team must submit:
 
@@ -135,10 +136,12 @@ Slide constraints matter because they are used if the team is selected as a Top 
 ## Practical Logistics
 
 - **Do not miss the 10:00 am kickoff briefing on 9 June.** The official details mark it as essential.
+- **Do not build before kickoff.** SuperAI's FAQ says fairness requires all project work to begin after the official hacking period starts; brainstorming is fine, but code, designs, and prototypes before kickoff are not.
 - **Collect and test credits immediately.** AWS, Vercel, Exa, Stripe, and Dify access should be validated before core implementation depends on them.
 - **Use the workshops for sponsor-specific judging intel.** AWS, Vercel, Stripe, and Exa each have official workshop slots before hacking starts.
 - **Plan the stage package before the deadline.** The `.ppt` or `.keynote` file, embedded screen recordings, and final pitch visuals must be ready by submission because slides are locked.
 - **Exploit the room setup.** Meals, supper, snacks, drinks, coffee, bean bags, rest areas, and full SuperAI conference access are included.
+- **Plan your own travel and recovery.** The event is free and includes food, drinks, and conference access, but SuperAI does not cover flights, visas, or accommodation. Rest areas are first-come, first-served and the venue has no shower facilities.
 
 ## Strategic Readout
 
@@ -161,6 +164,7 @@ Slide constraints matter because they are used if the team is selected as a Top 
 ## Recommended Build Checklist
 
 - Define the agent's job, tools, decision policy, and failure modes before writing code.
+- Keep pre-kickoff work to ideation and planning only; do not create code, designs, or prototypes before the official hacking window.
 - Decide which award paths you are targeting: Top 5, Exa, Stripe, or a stackable combination.
 - Build the deployed URL early on AWS and Vercel, then iterate behind it.
 - Add a visible trace, activity log, or replay so judges can see autonomy and tool use.
@@ -177,6 +181,8 @@ One externally documented winner, **DripSeek**, was a browser extension that ide
 ## Source Materials
 
 - `superai-official-details.md`
+- https://dorahacks.io/hackathon/next-hackathon/detail#submission-guidelines
+- https://www.competehub.dev/en/competitions/dorahacksnext-hackathon
 - https://www.superai.com/next-hackathon
 - https://www.superai.com/
 - https://www.superai.com/agenda
@@ -190,3 +196,5 @@ One externally documented winner, **DripSeek**, was a browser extension that ide
 ## Notes
 
 This version supersedes the earlier public-source brief where the 2026 theme, stack, prize structure, judging criteria, and submission rules were not yet available. The official details now confirm the hackathon is domain-open, agent-first, and explicitly oriented around AWS, Vercel, Exa, and Stripe.
+
+The DoraHacks page currently serves human verification to command-line fetches, so the direct page could not be archived locally. Its submission-guidelines content was cross-checked against the indexed CompeteHub summary published on 8 June 2026 and the official SuperAI page.

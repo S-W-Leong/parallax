@@ -1,0 +1,78 @@
+import { describe, expect, it } from "vitest";
+import { encodeSession, parseStoredSession } from "@/lib/session/sessionStorage";
+import { createEmptySession, sessionReducer } from "@/lib/session/sessionReducer";
+import type { ArtifactRecord } from "@/lib/artifacts/artifactTypes";
+
+const artifact: ArtifactRecord = {
+  id: "artifact-1",
+  title: "Inside a Cell",
+  topic: "cells",
+  summary: "A guided model of cell structures.",
+  sceneSource: "registerComponent('a','A',root,{}); setWalkthroughSteps([]);",
+  html: "<!doctype html><html><body>artifact</body></html>",
+  components: [
+    { id: "membrane", label: "Cell membrane" },
+    { id: "nucleus", label: "Nucleus" },
+    { id: "ribosome", label: "Ribosome" },
+  ],
+  walkthroughSteps: [
+    { id: "intro", title: "Start", narration: "Begin at the membrane.", targetComponentIds: ["membrane"] },
+  ],
+  createdAt: "2026-06-09T13:00:00.000Z",
+};
+
+describe("session reducer", () => {
+  it("creates a centered chat session by default", () => {
+    expect(createEmptySession()).toMatchObject({
+      mode: "chat",
+      activeArtifactId: null,
+      selectedComponent: null,
+    });
+  });
+
+  it("adds an artifact proposal and enters the learning room from the same thread", () => {
+    const withMessage = sessionReducer(createEmptySession(), { type: "user_message", content: "Teach me cells" });
+    const withArtifact = sessionReducer(withMessage, { type: "artifact_created", artifact, trace: ["Validated artifact"] });
+    const inRoom = sessionReducer(withArtifact, { type: "enter_experience", artifactId: artifact.id });
+
+    expect(inRoom.mode).toBe("learning_room");
+    expect(inRoom.activeArtifactId).toBe(artifact.id);
+    expect(inRoom.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(inRoom.messages[1]).toMatchObject({ artifactId: artifact.id });
+  });
+
+  it("tracks selected components as visible chat events", () => {
+    const inRoom = sessionReducer(
+      sessionReducer(createEmptySession(), { type: "artifact_created", artifact, trace: [] }),
+      { type: "enter_experience", artifactId: artifact.id },
+    );
+
+    const selected = sessionReducer(inRoom, {
+      type: "component_selected",
+      component: { artifactId: artifact.id, id: "nucleus", label: "Nucleus", metadata: { role: "DNA store" } },
+    });
+
+    expect(selected.selectedComponent).toMatchObject({ id: "nucleus", label: "Nucleus" });
+    expect(selected.messages.at(-1)).toMatchObject({ role: "system", content: "Selected: Nucleus" });
+  });
+
+  it("returns to chat while retaining a collapsed artifact preview", () => {
+    const inRoom = sessionReducer(
+      sessionReducer(createEmptySession(), { type: "artifact_created", artifact, trace: [] }),
+      { type: "enter_experience", artifactId: artifact.id },
+    );
+    const exited = sessionReducer(inRoom, { type: "exit_experience" });
+
+    expect(exited.mode).toBe("chat");
+    expect(exited.activeArtifactId).toBe(null);
+    expect(exited.lastArtifactId).toBe(artifact.id);
+  });
+
+  it("round trips persisted session state", () => {
+    const withMessage = sessionReducer(createEmptySession(), { type: "user_message", content: "Teach me CRISPR" });
+    const encoded = encodeSession(withMessage);
+    const restored = parseStoredSession(encoded);
+
+    expect(restored.messages[0]).toMatchObject({ role: "user", content: "Teach me CRISPR" });
+  });
+});
