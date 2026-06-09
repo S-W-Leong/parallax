@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Parallax",
-  description: "AI-generated 3D cutaway lessons for machines",
+  description: "Agent-generated interactive 3D learning rooms for STEM topics",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

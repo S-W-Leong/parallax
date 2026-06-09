@@ -153,10 +153,10 @@ Create the local Three.js asset used by the artifact iframe before any generated
 
 ```bash
 mkdir -p public/three
-cp node_modules/three/build/three.min.js public/three/three.min.js
+cp node_modules/three/build/three.module.min.js public/three/three.module.min.js
 ```
 
-Expected: `public/three/three.min.js` exists and can be served by Next.js. Commit this vendor asset because the artifact runtime must work without relying on CDN availability.
+Expected: `public/three/three.module.min.js` exists and can be served by Next.js. Commit this vendor asset because the artifact runtime must work without relying on CDN availability.
 
 - [ ] **Step 4: Point the page at the new app shell**
 
@@ -261,7 +261,7 @@ Expected: build succeeds after old user-visible demo files are removed in Task 8
 - [ ] **Step 9: Commit**
 
 ```bash
-git add package.json package-lock.json public/three/three.min.js app/page.tsx app/layout.tsx components/app/ParallaxArtifactApp.tsx README.md
+git add package.json package-lock.json public/three/three.module.min.js app/page.tsx app/layout.tsx components/app/ParallaxArtifactApp.tsx README.md
 git commit -m "Start Agents artifact app shell"
 ```
 

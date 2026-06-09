@@ -1,5 +1,5 @@
-import { ParallaxDemo } from "@/components/demo/ParallaxDemo";
+import { ParallaxArtifactApp } from "@/components/app/ParallaxArtifactApp";
 
 export default function Home() {
-  return <ParallaxDemo />;
+  return <ParallaxArtifactApp />;
 }

@@ -7,12 +7,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "latest",
-    "@aws-sdk/s3-request-presigner": "latest",
-    "@mediapipe/tasks-vision": "latest",
-    "@react-three/drei": "latest",
-    "@react-three/fiber": "latest",
-    "ai": "latest",
+    "@openai/agents": "latest",
     "exa-js": "latest",
     "lucide-react": "latest",
     "next": "latest",
@@ -25,7 +20,6 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@types/three": "latest",
     "typescript": "latest",
     "vitest": "latest"
   }
