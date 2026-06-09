@@ -158,6 +158,7 @@ export class AwsThreadStore implements ThreadStore {
           SK: threadSummaryKey(threadId),
         },
         UpdateExpression: "SET archivedAt = :archivedAt",
+        ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
         ExpressionAttributeValues: {
           ":archivedAt": archivedAt,
         },
