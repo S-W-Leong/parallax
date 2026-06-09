@@ -44,6 +44,8 @@ flowchart TD
   Z --> R
 ```
 
+
+
 ## System Architecture
 
 ```mermaid
@@ -106,6 +108,8 @@ flowchart LR
   Polly -. fallback .-> Panel
 ```
 
+
+
 ## Lesson Compilation Mode
 
 The Lesson Compiler creates the teaching artifact before the interactive experience starts. For the hackathon MVP, this is a controlled compiler for the `jet_engine` template.
@@ -155,6 +159,8 @@ sequenceDiagram
   end
 ```
 
+
+
 ## Runtime Tutor Mode
 
 Runtime Tutor Mode starts after the user clicks **Start Experience**. At this point, the app already has a validated lesson artifact, so the 3D experience can be smooth and deterministic.
@@ -195,6 +201,8 @@ sequenceDiagram
   Canvas-->>User: Replay turbine drives shaft drives compressor
 ```
 
+
+
 ## Boundary Between AI And Renderer
 
 The AI never generates arbitrary Three.js code. It only generates validated lesson artifacts and renderer commands.
@@ -219,6 +227,8 @@ flowchart TD
   K --> E
 ```
 
+
+
 ## Key Architectural Decisions
 
 - **Two agent layers**: Lesson Compiler for 0-to-1 generation, Runtime Tutor for live interaction.
@@ -228,3 +238,4 @@ flowchart TD
 - **Visible trace**: compilation logs are shown to judges so the agentic work is inspectable.
 - **Hybrid reliability**: Exa is used live, but cached lesson fallback keeps the demo safe.
 - **Input abstraction**: mouse, touch, and optional MediaPipe all emit the same component-selection events.
+
