@@ -7,6 +7,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1064.0",
+    "@aws-sdk/client-s3": "^3.1064.0",
+    "@aws-sdk/lib-dynamodb": "^3.1064.0",
     "@openai/agents": "latest",
     "exa-js": "latest",
     "lucide-react": "latest",
