@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handleAgentRoute } from "@/lib/agent/routes";
 import type { ArtifactRecord } from "@/lib/artifacts/artifactTypes";
+
+const createExperienceState = vi.hoisted(() => ({
+  result: null as unknown,
+}));
 
 vi.mock("@openai/agents", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@openai/agents")>();
@@ -10,12 +13,22 @@ vi.mock("@openai/agents", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/agent/tools/createExperienceTool", () => {
+  return {
+    makeCreateExperienceToolSink: vi.fn(() => ({
+      tool: {},
+      getResult: () => createExperienceState.result,
+    })),
+  };
+});
+
 vi.mock("@/lib/cloud/threadStore", () => {
   return {
     getThreadStore: vi.fn(),
   };
 });
 
+const { handleAgentRoute, handleChatRoute } = await import("@/lib/agent/routes");
 const { run } = await import("@openai/agents");
 const mockedRun = vi.mocked(run);
 const { getThreadStore } = await import("@/lib/cloud/threadStore");
@@ -46,6 +59,7 @@ describe("agent routes", () => {
     process.env.OPENAI_API_KEY = "test-key";
     mockedRun.mockReset();
     mockedGetThreadStore.mockReset();
+    createExperienceState.result = null;
   });
 
   afterEach(() => {
@@ -111,5 +125,76 @@ describe("agent routes", () => {
     expect(appendMessage.mock.calls[0][0]).toBe("thread-1");
     expect(appendMessage.mock.calls[0][1]).toMatchObject({ role: "user", content: "Teach me turbines" });
     expect(appendMessage.mock.calls[1][1]).toMatchObject({ role: "assistant", content: "Sure, let's explore turbines." });
+  });
+
+  it("persists artifacts before assistant messages that reference them", async () => {
+    const appendMessage = vi.fn().mockResolvedValue(undefined);
+    const saveArtifact = vi.fn().mockResolvedValue(undefined);
+    mockedGetThreadStore.mockReturnValue({
+      createThread: vi.fn(),
+      listThreads: vi.fn(),
+      loadThread: vi.fn(),
+      archiveThread: vi.fn(),
+      appendMessage,
+      saveArtifact,
+    });
+    createExperienceState.result = { ok: true, artifact };
+    mockedRun.mockResolvedValueOnce({ finalOutput: "I built a guided cell room." } as Awaited<ReturnType<typeof run>>);
+
+    await handleAgentRoute({
+      mode: "chat",
+      threadId: "thread-1",
+      message: "Build a cell room",
+      messages: [],
+    });
+
+    expect(saveArtifact).toHaveBeenCalledWith("thread-1", artifact);
+    expect(appendMessage).toHaveBeenCalledTimes(2);
+    expect(appendMessage.mock.calls[1][1]).toMatchObject({
+      role: "assistant",
+      content: "I built a guided cell room.",
+      artifactId: artifact.id,
+    });
+    expect(appendMessage.mock.invocationCallOrder[0]).toBeLessThan(saveArtifact.mock.invocationCallOrder[0]);
+    expect(saveArtifact.mock.invocationCallOrder[0]).toBeLessThan(appendMessage.mock.invocationCallOrder[1]);
+  });
+
+  it("does not append an artifact-linked assistant message when artifact persistence fails", async () => {
+    const appendMessage = vi.fn().mockResolvedValue(undefined);
+    const saveArtifact = vi.fn().mockRejectedValue(new Error("Artifact upload failed"));
+    mockedGetThreadStore.mockReturnValue({
+      createThread: vi.fn(),
+      listThreads: vi.fn(),
+      loadThread: vi.fn(),
+      archiveThread: vi.fn(),
+      appendMessage,
+      saveArtifact,
+    });
+    createExperienceState.result = { ok: true, artifact };
+    mockedRun.mockResolvedValueOnce({ finalOutput: "I built a guided cell room." } as Awaited<ReturnType<typeof run>>);
+
+    await expect(handleAgentRoute({
+      mode: "chat",
+      threadId: "thread-1",
+      message: "Build a cell room",
+      messages: [],
+    })).rejects.toThrow("Artifact upload failed");
+
+    expect(appendMessage).toHaveBeenCalledTimes(1);
+    expect(appendMessage.mock.calls[0][1]).toMatchObject({ role: "user", content: "Build a cell room" });
+    expect(saveArtifact).toHaveBeenCalledWith("thread-1", artifact);
+  });
+
+  it("keeps the old chat route wrapper working", async () => {
+    mockedRun.mockResolvedValueOnce({ finalOutput: "Old route still answers." } as Awaited<ReturnType<typeof run>>);
+
+    const response = await handleChatRoute({ message: "Sup", messages: [] });
+
+    expect(response).toEqual({
+      message: "Old route still answers.",
+      trace: [],
+      artifact: null,
+      error: null,
+    });
   });
 });

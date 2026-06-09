@@ -63,12 +63,17 @@ function makeMessage(role: ChatMessage["role"], content: string, artifactId?: st
 async function persistIfThreaded(threadId: string | undefined, messages: ChatMessage[], artifact?: ArtifactRecord | null) {
   if (!threadId) return;
   const store = getThreadStore();
-  for (const message of messages) {
-    await store.appendMessage(threadId, message);
+  if (!artifact) {
+    for (const message of messages) {
+      await store.appendMessage(threadId, message);
+    }
+    return;
   }
-  if (artifact) {
-    await store.saveArtifact(threadId, artifact);
-  }
+
+  const [userMessage, assistantMessage] = messages;
+  if (userMessage) await store.appendMessage(threadId, userMessage);
+  await store.saveArtifact(threadId, artifact);
+  if (assistantMessage) await store.appendMessage(threadId, assistantMessage);
 }
 
 function recentConversation(messages: ChatMessage[]): string {
@@ -161,4 +166,12 @@ export async function handleAgentRoute(input: unknown) {
   }
 
   return handleLearningRoomMode(request);
+}
+
+export async function handleChatRoute(input: unknown) {
+  return handleAgentRoute({ ...(input as Record<string, unknown>), mode: "chat" });
+}
+
+export async function handleTutorRoute(input: unknown) {
+  return handleAgentRoute({ ...(input as Record<string, unknown>), mode: "learning_room" });
 }
