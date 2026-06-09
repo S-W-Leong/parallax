@@ -155,6 +155,7 @@ export class AwsThreadStore implements ThreadStore {
           sceneSource: await bodyToString((sourceObject as { Body?: unknown }).Body),
           components: record.components,
           walkthroughSteps: record.walkthroughSteps,
+          learningOutcomes: record.learningOutcomes,
           createdAt: record.createdAt,
         };
       }),
@@ -245,6 +246,7 @@ export class AwsThreadStore implements ThreadStore {
       sceneSourceS3Key,
       components: artifact.components,
       walkthroughSteps: artifact.walkthroughSteps,
+      learningOutcomes: artifact.learningOutcomes,
       createdAt: artifact.createdAt,
     };
 

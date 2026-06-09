@@ -20,6 +20,8 @@ export const walkthroughStepSchema = z.object({
   camera: cameraPoseSchema.optional(),
 });
 
+export const learningOutcomeSchema = z.string().min(1).max(96);
+
 export const artifactRecordSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
@@ -29,6 +31,7 @@ export const artifactRecordSchema = z.object({
   html: z.string().min(1),
   components: z.array(artifactComponentSchema).min(1),
   walkthroughSteps: z.array(walkthroughStepSchema).min(1),
+  learningOutcomes: z.array(learningOutcomeSchema).max(3).optional(),
   createdAt: z.string().min(1),
 });
 
@@ -111,6 +114,7 @@ export const createExperienceInputSchema = z.object({
   sceneSource: z.string().min(1),
   components: z.array(artifactComponentSchema).min(3),
   walkthroughSteps: z.array(walkthroughStepSchema).min(1),
+  learningOutcomes: z.array(learningOutcomeSchema).min(1).max(3).optional(),
 });
 
 export const learningSessionSchema = z.object({

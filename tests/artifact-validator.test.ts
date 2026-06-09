@@ -67,6 +67,36 @@ setWalkthroughSteps([{ id: "intro", title: "Intro", narration: "Start here.", ta
     }
   });
 
+  it("preserves friendly learning outcomes on created artifacts", () => {
+    const result = createArtifactRecord({
+      topic: "turbines",
+      title: "Turbine Lab",
+      summary: "Explore turbine stages.",
+      learningOutcomes: ["Trace airflow", "Compare pressure zones", "See thrust form"],
+      sceneSource: `
+const a = new THREE.Group();
+const b = new THREE.Group();
+const c = new THREE.Group();
+root.add(a, b, c);
+registerComponent("fan", "Fan", a, {});
+registerComponent("compressor", "Compressor", b, {});
+registerComponent("combustor", "Combustor", c, {});
+setWalkthroughSteps([{ id: "intro", title: "Trace airflow", narration: "Follow the path.", targetComponentIds: ["fan"] }]);
+`,
+      components: [
+        { id: "fan", label: "Fan" },
+        { id: "compressor", label: "Compressor" },
+        { id: "combustor", label: "Combustor" },
+      ],
+      walkthroughSteps: [{ id: "intro", title: "Trace airflow", narration: "Follow the path.", targetComponentIds: ["fan"] }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.artifact.learningOutcomes).toEqual(["Trace airflow", "Compare pressure zones", "See thrust form"]);
+    }
+  });
+
   it("rejects declared components that are not referenced by scene source", () => {
     const result = createArtifactRecord({
       topic: "cells",

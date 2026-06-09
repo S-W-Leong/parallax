@@ -9,6 +9,7 @@ const createExperienceToolInputSchema = z.object({
   topic: z.string().min(1),
   title: z.string().min(1),
   summary: z.string().min(1),
+  learningOutcomes: z.array(z.string().min(1).max(96)).min(1).max(3).nullable().optional(),
   sceneSource: z.string().min(1),
   components: z.array(z.object({
     id: z.string().min(1),
@@ -45,6 +46,7 @@ function normalizeToolInput(input: z.infer<typeof createExperienceToolInputSchem
 
   return {
     ...input,
+    learningOutcomes: input.learningOutcomes ?? undefined,
     components: input.components.map((component) => ({
       id: component.id,
       label: component.label,

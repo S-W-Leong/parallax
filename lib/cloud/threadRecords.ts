@@ -44,6 +44,7 @@ export type ArtifactMetadataRecord = {
   sceneSourceS3Key: string;
   components: ArtifactRecord["components"];
   walkthroughSteps: ArtifactRecord["walkthroughSteps"];
+  learningOutcomes?: ArtifactRecord["learningOutcomes"];
   createdAt: string;
 };
 

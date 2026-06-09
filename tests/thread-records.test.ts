@@ -8,6 +8,7 @@ import {
   threadSummaryKey,
   toMessageRecord,
   toThreadSummary,
+  type ArtifactMetadataRecord,
 } from "@/lib/cloud/threadRecords";
 
 describe("threadRecords", () => {
@@ -57,5 +58,30 @@ describe("threadRecords", () => {
       role: "user",
       content: "Teach me jet engines",
     });
+  });
+
+  it("allows artifact metadata records to carry friendly learning outcomes", () => {
+    const record: ArtifactMetadataRecord = {
+      PK: "THREAD#thread-1",
+      SK: "ARTIFACT#artifact-1",
+      entityType: "artifact",
+      threadId: "thread-1",
+      artifactId: "artifact-1",
+      title: "Jet Engine Lab",
+      topic: "jet engines",
+      summary: "Explore airflow, combustion, and thrust.",
+      htmlS3Key: "artifacts/thread-1/artifact-1/index.html",
+      sceneSourceS3Key: "artifacts/thread-1/artifact-1/scene.js",
+      components: [
+        { id: "fan", label: "Fan" },
+        { id: "compressor", label: "Compressor" },
+        { id: "combustor", label: "Combustor" },
+      ],
+      walkthroughSteps: [{ id: "intro", title: "Trace airflow", narration: "Follow the path.", targetComponentIds: ["fan"] }],
+      learningOutcomes: ["Trace airflow", "Compare pressure zones", "See thrust form"],
+      createdAt: "2026-06-10T00:00:00.000Z",
+    };
+
+    expect(record.learningOutcomes).toEqual(["Trace airflow", "Compare pressure zones", "See thrust form"]);
   });
 });
