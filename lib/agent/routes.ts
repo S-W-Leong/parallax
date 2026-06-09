@@ -1,23 +1,42 @@
 import { run } from "@openai/agents";
 import { z } from "zod";
-import { artifactRecordSchema, chatMessageSchema, selectedComponentSchema, type ChatMessage } from "@/lib/artifacts/artifactTypes";
-import { makeOrchestratorAgent, makeTutorAgent } from "./agents";
+import {
+  artifactRecordSchema,
+  chatMessageSchema,
+  selectedComponentSchema,
+  type ArtifactRecord,
+  type ChatMessage,
+} from "@/lib/artifacts/artifactTypes";
+import { getThreadStore } from "@/lib/cloud/threadStore";
+import { makeParallaxAgent } from "./agents";
 import { makeCreateExperienceToolSink } from "./tools/createExperienceTool";
 import { makeResearchStemTopicTool } from "./tools/researchStemTopicTool";
 import { makeSendArtifactCommandSink } from "./tools/sendArtifactCommandTool";
 
-export const chatRouteRequestSchema = z.object({
-  message: z.string().min(1),
-  messages: z.array(chatMessageSchema).default([]),
+const persistedThreadContextSchema = z.object({
+  threadId: z.string().min(1).optional(),
+  userId: z.string().min(1).optional(),
 });
 
-export const tutorRouteRequestSchema = z.object({
+const chatAgentRequestSchema = z.object({
+  mode: z.literal("chat"),
+  message: z.string().min(1),
+  messages: z.array(chatMessageSchema).default([]),
+}).merge(persistedThreadContextSchema);
+
+const learningRoomAgentRequestSchema = z.object({
+  mode: z.literal("learning_room"),
   message: z.string().min(1),
   artifact: artifactRecordSchema,
   messages: z.array(chatMessageSchema).default([]),
   selectedComponent: selectedComponentSchema.nullable(),
   activeStepId: z.string().nullable(),
-});
+}).merge(persistedThreadContextSchema);
+
+export const agentRouteRequestSchema = z.discriminatedUnion("mode", [
+  chatAgentRequestSchema,
+  learningRoomAgentRequestSchema,
+]);
 
 function requireOpenAiKey() {
   if (!process.env.OPENAI_API_KEY) {
@@ -31,6 +50,27 @@ function finalOutputText(value: unknown, fallback: string): string {
   return JSON.stringify(value);
 }
 
+function makeMessage(role: ChatMessage["role"], content: string, artifactId?: string): ChatMessage {
+  return {
+    id: `message-${crypto.randomUUID()}`,
+    role,
+    content,
+    createdAt: new Date().toISOString(),
+    artifactId,
+  };
+}
+
+async function persistIfThreaded(threadId: string | undefined, messages: ChatMessage[], artifact?: ArtifactRecord | null) {
+  if (!threadId) return;
+  const store = getThreadStore();
+  for (const message of messages) {
+    await store.appendMessage(threadId, message);
+  }
+  if (artifact) {
+    await store.saveArtifact(threadId, artifact);
+  }
+}
+
 function recentConversation(messages: ChatMessage[]): string {
   return messages
     .slice(-10)
@@ -38,27 +78,33 @@ function recentConversation(messages: ChatMessage[]): string {
     .join("\n");
 }
 
-export async function handleChatRoute(input: unknown) {
-  requireOpenAiKey();
-  const request = chatRouteRequestSchema.parse(input);
+async function handleChatMode(request: z.infer<typeof chatAgentRequestSchema>) {
+  const userMessage = makeMessage("user", request.message);
   const createExperience = makeCreateExperienceToolSink();
   const researchStemTopic = makeResearchStemTopicTool();
-  const agent = makeOrchestratorAgent([researchStemTopic, createExperience.tool]);
+  const agent = makeParallaxAgent([researchStemTopic, createExperience.tool]);
   const history = recentConversation(request.messages);
-  const prompt = `${history ? `Conversation so far:\n${history}\n\n` : ""}User request:\n${request.message}`;
+  const prompt = `Mode: main chat
+${history ? `Conversation so far:\n${history}\n\n` : ""}User request:\n${request.message}`;
 
   const result = await run(agent, prompt, { maxTurns: 8 });
   const artifactResult = createExperience.getResult();
-  const trace = ["Planning learning experience", "Generating interactive 3D artifact", "Validating artifact contract"];
 
   if (!artifactResult) {
+    const assistantMessage = makeMessage(
+      "assistant",
+      finalOutputText(result.finalOutput, "I can help you learn STEM topics or build an interactive 3D experience."),
+    );
+    await persistIfThreaded(request.threadId, [userMessage, assistantMessage]);
     return {
-      message: "The agent did not call create_experience.",
-      trace,
+      message: assistantMessage.content,
+      trace: [],
       artifact: null,
-      error: "The agent did not call create_experience.",
+      error: null,
     };
   }
+
+  const trace = ["Planning learning experience", "Generating interactive 3D artifact", "Validating artifact contract"];
 
   if (!artifactResult.ok) {
     return {
@@ -69,21 +115,23 @@ export async function handleChatRoute(input: unknown) {
     };
   }
 
+  const messageText = finalOutputText(result.finalOutput, `I built ${artifactResult.artifact.title}.`);
+  const assistantMessage = makeMessage("assistant", messageText, artifactResult.artifact.id);
+  await persistIfThreaded(request.threadId, [userMessage, assistantMessage], artifactResult.artifact);
   return {
-    message: finalOutputText(result.finalOutput, `I built ${artifactResult.artifact.title}.`),
+    message: messageText,
     trace,
     artifact: artifactResult.artifact,
     error: null,
   };
 }
 
-export async function handleTutorRoute(input: unknown) {
-  requireOpenAiKey();
-  const request = tutorRouteRequestSchema.parse(input);
+async function handleLearningRoomMode(request: z.infer<typeof learningRoomAgentRequestSchema>) {
   const commandSink = makeSendArtifactCommandSink();
-  const agent = makeTutorAgent([commandSink.tool]);
+  const agent = makeParallaxAgent([commandSink.tool]);
   const activeStep = request.artifact.walkthroughSteps.find((step) => step.id === request.activeStepId) ?? null;
   const context = {
+    mode: "learning_room",
     artifact: {
       title: request.artifact.title,
       topic: request.artifact.topic,
@@ -102,4 +150,15 @@ export async function handleTutorRoute(input: unknown) {
     message: finalOutputText(result.finalOutput, "I can help with this artifact."),
     commands: commandSink.getCommands(),
   };
+}
+
+export async function handleAgentRoute(input: unknown) {
+  requireOpenAiKey();
+  const request = agentRouteRequestSchema.parse(input);
+
+  if (request.mode === "chat") {
+    return handleChatMode(request);
+  }
+
+  return handleLearningRoomMode(request);
 }
