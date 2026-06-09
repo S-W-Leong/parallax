@@ -17,9 +17,16 @@ Open `http://localhost:3000`.
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5.4
 EXA_API_KEY=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=
+PARALLAX_THREADS_TABLE=
+PARALLAX_ARTIFACT_BUCKET=
 ```
 
 `OPENAI_API_KEY` is required for live artifact creation and learning-room chat. `OPENAI_MODEL` is optional and defaults to `gpt-5.4`. `EXA_API_KEY` is optional; when absent or failing, the Parallax Agent continues from model knowledge.
+
+AWS variables are required for persisted chat threads and generated artifact storage. See [Parallax Architecture](docs/parallax-architecture.md) for the full deployment architecture, DynamoDB table shape, S3 bucket setup, IAM policy, and Vercel env configuration.
 
 ## Verification
 
