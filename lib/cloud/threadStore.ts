@@ -37,8 +37,8 @@ export type ThreadStore = {
   listThreads(userId: string): Promise<PersistedThreadSummary[]>;
   loadThread(userId: string, threadId: string): Promise<LoadedThread>;
   archiveThread(userId: string, threadId: string, archivedAt: string): Promise<void>;
-  appendMessage(threadId: string, message: ChatMessage): Promise<void>;
-  saveArtifact(threadId: string, artifact: ArtifactRecord): Promise<void>;
+  appendMessage(userId: string, threadId: string, message: ChatMessage): Promise<void>;
+  saveArtifact(userId: string, threadId: string, artifact: ArtifactRecord): Promise<void>;
 };
 
 async function bodyToString(body: unknown): Promise<string> {
@@ -180,7 +180,26 @@ export class AwsThreadStore implements ThreadStore {
     );
   }
 
-  async appendMessage(threadId: string, message: ChatMessage): Promise<void> {
+  private async touchThread(userId: string, threadId: string, updatedAt: string, title?: string): Promise<void> {
+    await this.options.dynamo.send(
+      new UpdateCommand({
+        TableName: this.options.tableName,
+        Key: {
+          PK: threadOwnerKey(userId),
+          SK: threadSummaryKey(threadId),
+        },
+        UpdateExpression: title ? "SET updatedAt = :updatedAt, title = :title" : "SET updatedAt = :updatedAt",
+        ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK) AND attribute_not_exists(archivedAt)",
+        ExpressionAttributeValues: {
+          ":updatedAt": updatedAt,
+          ...(title ? { ":title": title } : {}),
+        },
+      }),
+    );
+  }
+
+  async appendMessage(userId: string, threadId: string, message: ChatMessage): Promise<void> {
+    await this.touchThread(userId, threadId, message.createdAt, message.role === "user" ? titleFromMessage(message.content) : undefined);
     await this.options.dynamo.send(
       new PutCommand({
         TableName: this.options.tableName,
@@ -189,7 +208,9 @@ export class AwsThreadStore implements ThreadStore {
     );
   }
 
-  async saveArtifact(threadId: string, artifact: ArtifactRecord): Promise<void> {
+  async saveArtifact(userId: string, threadId: string, artifact: ArtifactRecord): Promise<void> {
+    await this.touchThread(userId, threadId, artifact.createdAt, artifact.title);
+
     const htmlS3Key = artifactHtmlKey(threadId, artifact.id);
     const sceneSourceS3Key = artifactSourceKey(threadId, artifact.id);
 
@@ -234,6 +255,12 @@ export class AwsThreadStore implements ThreadStore {
       }),
     );
   }
+}
+
+function titleFromMessage(content: string): string {
+  const compact = content.trim().replace(/\s+/g, " ");
+  if (!compact) return "New chat";
+  return compact.length > 48 ? `${compact.slice(0, 45)}...` : compact;
 }
 
 let singleton: ThreadStore | null = null;

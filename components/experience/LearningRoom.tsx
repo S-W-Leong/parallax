@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut } from "lucide-react";
+import { LogOut, RefreshCcw } from "lucide-react";
 import type { ArtifactRecord, ChatMessage, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 import type { ArtifactCommand } from "@/lib/artifacts/messageBridge";
 import { ChatComposer } from "@/components/chat/ChatComposer";
@@ -16,7 +16,8 @@ type LearningRoomProps = {
   selectedComponent: SelectedComponent | null;
   busy: boolean;
   onExit: () => void;
-  onTutorMessage: (message: string) => void;
+  onResetSession: () => void;
+  onLearningRoomMessage: (message: string) => void;
   onCommandsFlushed: () => void;
   onComponentSelected: (component: SelectedComponent) => void;
   onStepChanged: (stepId: string, title: string) => void;
@@ -33,7 +34,8 @@ export function LearningRoom({
   selectedComponent,
   busy,
   onExit,
-  onTutorMessage,
+  onResetSession,
+  onLearningRoomMessage,
   onCommandsFlushed,
   onComponentSelected,
   onStepChanged,
@@ -53,15 +55,20 @@ export function LearningRoom({
       <aside className="room-chat">
         <header>
           <div>
-            <p className="eyebrow">Tutor</p>
+            <p className="eyebrow">Room guide</p>
             <h1>{selectedComponent ? selectedComponent.label : artifact.topic}</h1>
           </div>
-          <button className="icon-button" onClick={onExit} aria-label="Exit experience">
-            <LogOut size={18} />
-          </button>
+          <div className="toolbar-actions">
+            <button className="icon-button" onClick={onResetSession} aria-label="Start new chat" title="Start new chat">
+              <RefreshCcw size={18} />
+            </button>
+            <button className="icon-button" onClick={onExit} aria-label="Exit experience" title="Exit experience">
+              <LogOut size={18} />
+            </button>
+          </div>
         </header>
         <ChatThread messages={messages} artifacts={artifacts} trace={trace} onEnterExperience={onEnterExperience} />
-        <ChatComposer disabled={busy} placeholder="Ask about this room" onSubmit={onTutorMessage} />
+        <ChatComposer disabled={busy} placeholder="Ask about this room" onSubmit={onLearningRoomMessage} />
       </aside>
     </main>
   );

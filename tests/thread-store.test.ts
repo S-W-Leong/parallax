@@ -306,14 +306,27 @@ describe("AwsThreadStore", () => {
     expect(s3.send).not.toHaveBeenCalled();
   });
 
-  it("persists a message under the thread partition", async () => {
+  it("validates ownership, updates the summary, and persists a message under the thread partition", async () => {
     const dynamo = { send: vi.fn().mockResolvedValue({}) };
     const s3 = { send: vi.fn().mockResolvedValue({}) };
     const store = new AwsThreadStore({ dynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" });
 
-    await store.appendMessage("thread-1", message);
+    await store.appendMessage("demo-1", "thread-1", message);
 
     expect(dynamo.send.mock.calls[0][0].input).toMatchObject({
+      TableName: "threads-table",
+      Key: {
+        PK: "USER#demo-1",
+        SK: "THREAD#thread-1",
+      },
+      UpdateExpression: "SET updatedAt = :updatedAt, title = :title",
+      ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK) AND attribute_not_exists(archivedAt)",
+      ExpressionAttributeValues: {
+        ":updatedAt": "2026-06-09T14:00:00.000Z",
+        ":title": "Teach me turbines",
+      },
+    });
+    expect(dynamo.send.mock.calls[1][0].input).toMatchObject({
       TableName: "threads-table",
       Item: {
         PK: "THREAD#thread-1",
@@ -329,8 +342,21 @@ describe("AwsThreadStore", () => {
     const s3 = { send: vi.fn().mockResolvedValue({}) };
     const store = new AwsThreadStore({ dynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" });
 
-    await store.saveArtifact("thread-1", artifact);
+    await store.saveArtifact("demo-1", "thread-1", artifact);
 
+    expect(dynamo.send.mock.calls[0][0].input).toMatchObject({
+      TableName: "threads-table",
+      Key: {
+        PK: "USER#demo-1",
+        SK: "THREAD#thread-1",
+      },
+      UpdateExpression: "SET updatedAt = :updatedAt, title = :title",
+      ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK) AND attribute_not_exists(archivedAt)",
+      ExpressionAttributeValues: {
+        ":updatedAt": artifact.createdAt,
+        ":title": artifact.title,
+      },
+    });
     expect(s3.send).toHaveBeenCalledTimes(2);
     expect(s3.send.mock.calls[0][0].input).toMatchObject({
       Bucket: "artifact-bucket",
@@ -344,7 +370,7 @@ describe("AwsThreadStore", () => {
       Body: artifact.sceneSource,
       ContentType: "text/javascript; charset=utf-8",
     });
-    expect(dynamo.send.mock.calls[0][0].input.Item).toMatchObject({
+    expect(dynamo.send.mock.calls[1][0].input.Item).toMatchObject({
       PK: "THREAD#thread-1",
       SK: "ARTIFACT#artifact-1",
       entityType: "artifact",

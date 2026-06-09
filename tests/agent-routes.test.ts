@@ -122,9 +122,10 @@ describe("agent routes", () => {
     });
 
     expect(appendMessage).toHaveBeenCalledTimes(2);
-    expect(appendMessage.mock.calls[0][0]).toBe("thread-1");
-    expect(appendMessage.mock.calls[0][1]).toMatchObject({ role: "user", content: "Teach me turbines" });
-    expect(appendMessage.mock.calls[1][1]).toMatchObject({ role: "assistant", content: "Sure, let's explore turbines." });
+    expect(appendMessage.mock.calls[0][0]).toBe("demo-1");
+    expect(appendMessage.mock.calls[0][1]).toBe("thread-1");
+    expect(appendMessage.mock.calls[0][2]).toMatchObject({ role: "user", content: "Teach me turbines" });
+    expect(appendMessage.mock.calls[1][2]).toMatchObject({ role: "assistant", content: "Sure, let's explore turbines." });
   });
 
   it("persists artifacts before assistant messages that reference them", async () => {
@@ -144,13 +145,14 @@ describe("agent routes", () => {
     await handleAgentRoute({
       mode: "chat",
       threadId: "thread-1",
+      userId: "demo-1",
       message: "Build a cell room",
       messages: [],
     });
 
-    expect(saveArtifact).toHaveBeenCalledWith("thread-1", artifact);
+    expect(saveArtifact).toHaveBeenCalledWith("demo-1", "thread-1", artifact);
     expect(appendMessage).toHaveBeenCalledTimes(2);
-    expect(appendMessage.mock.calls[1][1]).toMatchObject({
+    expect(appendMessage.mock.calls[1][2]).toMatchObject({
       role: "assistant",
       content: "I built a guided cell room.",
       artifactId: artifact.id,
@@ -176,13 +178,44 @@ describe("agent routes", () => {
     await expect(handleAgentRoute({
       mode: "chat",
       threadId: "thread-1",
+      userId: "demo-1",
       message: "Build a cell room",
       messages: [],
     })).rejects.toThrow("Artifact upload failed");
 
     expect(appendMessage).toHaveBeenCalledTimes(1);
-    expect(appendMessage.mock.calls[0][1]).toMatchObject({ role: "user", content: "Build a cell room" });
-    expect(saveArtifact).toHaveBeenCalledWith("thread-1", artifact);
+    expect(appendMessage.mock.calls[0][2]).toMatchObject({ role: "user", content: "Build a cell room" });
+    expect(saveArtifact).toHaveBeenCalledWith("demo-1", "thread-1", artifact);
+  });
+
+  it("persists learning-room user and assistant messages when threaded", async () => {
+    const appendMessage = vi.fn().mockResolvedValue(undefined);
+    mockedGetThreadStore.mockReturnValue({
+      createThread: vi.fn(),
+      listThreads: vi.fn(),
+      loadThread: vi.fn(),
+      archiveThread: vi.fn(),
+      appendMessage,
+      saveArtifact: vi.fn(),
+    });
+    mockedRun.mockResolvedValueOnce({ finalOutput: "The membrane controls what enters and exits." } as Awaited<ReturnType<typeof run>>);
+
+    await handleAgentRoute({
+      mode: "learning_room",
+      threadId: "thread-1",
+      userId: "demo-1",
+      message: "What does the membrane do?",
+      artifact,
+      messages: [],
+      selectedComponent: { artifactId: artifact.id, id: "membrane", label: "Cell membrane" },
+      activeStepId: "intro",
+    });
+
+    expect(appendMessage).toHaveBeenCalledTimes(2);
+    expect(appendMessage.mock.calls[0][0]).toBe("demo-1");
+    expect(appendMessage.mock.calls[0][1]).toBe("thread-1");
+    expect(appendMessage.mock.calls[0][2]).toMatchObject({ role: "user", content: "What does the membrane do?", artifactId: artifact.id });
+    expect(appendMessage.mock.calls[1][2]).toMatchObject({ role: "assistant", content: "The membrane controls what enters and exits.", artifactId: artifact.id });
   });
 
   it("keeps the old chat route wrapper working", async () => {

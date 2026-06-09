@@ -118,13 +118,21 @@ export function useThreadSession(): {
           method: "DELETE",
         }),
       );
-      setThreads((current) => current.filter((thread) => thread.id !== threadId));
+      const remainingThreads = threads.filter((thread) => thread.id !== threadId);
+      setThreads(remainingThreads);
       if (activeThreadId === threadId) {
-        setActiveThreadId(null);
-        dispatch({ type: "reset_session" });
+        const nextThread = remainingThreads[0];
+        if (nextThread) {
+          await loadThreadForUser(userId, nextThread.id);
+        } else {
+          const thread = await createThreadForUser(userId);
+          setThreads([thread]);
+          setActiveThreadId(thread.id);
+          dispatch({ type: "session_loaded", session: { ...createEmptySession(), id: thread.id } });
+        }
       }
     },
-    [activeThreadId, userId],
+    [activeThreadId, loadThreadForUser, threads, userId],
   );
 
   return { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread };

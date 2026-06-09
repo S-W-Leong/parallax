@@ -60,20 +60,20 @@ function makeMessage(role: ChatMessage["role"], content: string, artifactId?: st
   };
 }
 
-async function persistIfThreaded(threadId: string | undefined, messages: ChatMessage[], artifact?: ArtifactRecord | null) {
-  if (!threadId) return;
+async function persistIfThreaded(userId: string | undefined, threadId: string | undefined, messages: ChatMessage[], artifact?: ArtifactRecord | null) {
+  if (!userId || !threadId) return;
   const store = getThreadStore();
   if (!artifact) {
     for (const message of messages) {
-      await store.appendMessage(threadId, message);
+      await store.appendMessage(userId, threadId, message);
     }
     return;
   }
 
   const [userMessage, assistantMessage] = messages;
-  if (userMessage) await store.appendMessage(threadId, userMessage);
-  await store.saveArtifact(threadId, artifact);
-  if (assistantMessage) await store.appendMessage(threadId, assistantMessage);
+  if (userMessage) await store.appendMessage(userId, threadId, userMessage);
+  await store.saveArtifact(userId, threadId, artifact);
+  if (assistantMessage) await store.appendMessage(userId, threadId, assistantMessage);
 }
 
 function recentConversation(messages: ChatMessage[]): string {
@@ -100,7 +100,7 @@ ${history ? `Conversation so far:\n${history}\n\n` : ""}User request:\n${request
       "assistant",
       finalOutputText(result.finalOutput, "I can help you learn STEM topics or build an interactive 3D experience."),
     );
-    await persistIfThreaded(request.threadId, [userMessage, assistantMessage]);
+    await persistIfThreaded(request.userId, request.threadId, [userMessage, assistantMessage]);
     return {
       message: assistantMessage.content,
       trace: [],
@@ -122,7 +122,7 @@ ${history ? `Conversation so far:\n${history}\n\n` : ""}User request:\n${request
 
   const messageText = finalOutputText(result.finalOutput, `I built ${artifactResult.artifact.title}.`);
   const assistantMessage = makeMessage("assistant", messageText, artifactResult.artifact.id);
-  await persistIfThreaded(request.threadId, [userMessage, assistantMessage], artifactResult.artifact);
+  await persistIfThreaded(request.userId, request.threadId, [userMessage, assistantMessage], artifactResult.artifact);
   return {
     message: messageText,
     trace,
@@ -132,6 +132,7 @@ ${history ? `Conversation so far:\n${history}\n\n` : ""}User request:\n${request
 }
 
 async function handleLearningRoomMode(request: z.infer<typeof learningRoomAgentRequestSchema>) {
+  const userMessage = makeMessage("user", request.message, request.artifact.id);
   const commandSink = makeSendArtifactCommandSink();
   const agent = makeParallaxAgent([commandSink.tool]);
   const activeStep = request.artifact.walkthroughSteps.find((step) => step.id === request.activeStepId) ?? null;
@@ -151,8 +152,14 @@ async function handleLearningRoomMode(request: z.infer<typeof learningRoomAgentR
 
   const result = await run(agent, `Context:\n${JSON.stringify(context)}\n\nUser question:\n${request.message}`, { maxTurns: 6 });
 
+  const message = finalOutputText(result.finalOutput, "I can help with this artifact.");
+  await persistIfThreaded(request.userId, request.threadId, [
+    userMessage,
+    makeMessage("assistant", message, request.artifact.id),
+  ]);
+
   return {
-    message: finalOutputText(result.finalOutput, "I can help with this artifact."),
+    message,
     commands: commandSink.getCommands(),
   };
 }
