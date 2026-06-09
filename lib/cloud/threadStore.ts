@@ -1,8 +1,16 @@
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
+import type { ArtifactRecord, ChatMessage } from "@/lib/artifacts/artifactTypes";
 import {
+  artifactHtmlKey,
+  artifactKey,
+  artifactSourceKey,
   threadOwnerKey,
+  threadPartitionKey,
   threadSummaryKey,
+  toMessageRecord,
   toThreadSummary,
+  type ArtifactMetadataRecord,
   type PersistedThreadSummary,
   type ThreadSummaryRecord,
 } from "./threadRecords";
@@ -20,6 +28,8 @@ export type CreateThreadInput = {
 
 export type ThreadStore = {
   createThread(input: CreateThreadInput): Promise<PersistedThreadSummary>;
+  appendMessage(threadId: string, message: ChatMessage): Promise<void>;
+  saveArtifact(threadId: string, artifact: ArtifactRecord): Promise<void>;
 };
 
 export class AwsThreadStore implements ThreadStore {
@@ -53,5 +63,60 @@ export class AwsThreadStore implements ThreadStore {
     );
 
     return toThreadSummary(record);
+  }
+
+  async appendMessage(threadId: string, message: ChatMessage): Promise<void> {
+    await this.options.dynamo.send(
+      new PutCommand({
+        TableName: this.options.tableName,
+        Item: toMessageRecord(message, threadId),
+      }),
+    );
+  }
+
+  async saveArtifact(threadId: string, artifact: ArtifactRecord): Promise<void> {
+    const htmlS3Key = artifactHtmlKey(threadId, artifact.id);
+    const sceneSourceS3Key = artifactSourceKey(threadId, artifact.id);
+
+    await this.options.s3.send(
+      new PutObjectCommand({
+        Bucket: this.options.bucketName,
+        Key: htmlS3Key,
+        Body: artifact.html,
+        ContentType: "text/html; charset=utf-8",
+      }),
+    );
+
+    await this.options.s3.send(
+      new PutObjectCommand({
+        Bucket: this.options.bucketName,
+        Key: sceneSourceS3Key,
+        Body: artifact.sceneSource,
+        ContentType: "text/javascript; charset=utf-8",
+      }),
+    );
+
+    const record: ArtifactMetadataRecord = {
+      PK: threadPartitionKey(threadId),
+      SK: artifactKey(artifact.id),
+      entityType: "artifact",
+      threadId,
+      artifactId: artifact.id,
+      title: artifact.title,
+      topic: artifact.topic,
+      summary: artifact.summary,
+      htmlS3Key,
+      sceneSourceS3Key,
+      components: artifact.components,
+      walkthroughSteps: artifact.walkthroughSteps,
+      createdAt: artifact.createdAt,
+    };
+
+    await this.options.dynamo.send(
+      new PutCommand({
+        TableName: this.options.tableName,
+        Item: record,
+      }),
+    );
   }
 }
