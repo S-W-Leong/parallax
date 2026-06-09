@@ -8,9 +8,10 @@ type ChatThreadProps = {
   artifacts: Record<string, ArtifactRecord>;
   trace: string[];
   onEnterExperience: (artifactId: string) => void;
+  showArtifactCards?: boolean;
 };
 
-export function ChatThread({ messages, artifacts, trace, onEnterExperience }: ChatThreadProps) {
+export function ChatThread({ messages, artifacts, trace, onEnterExperience, showArtifactCards = true }: ChatThreadProps) {
   if (!messages.length) {
     return (
       <div className="empty-thread">
@@ -30,7 +31,7 @@ export function ChatThread({ messages, artifacts, trace, onEnterExperience }: Ch
               <div className="message-bubble">
                 <p>{message.content}</p>
               </div>
-              {artifact ? <ExperienceProposalCard artifact={artifact} trace={trace} onEnterExperience={onEnterExperience} /> : null}
+              {artifact && showArtifactCards ? <ExperienceProposalCard artifact={artifact} trace={trace} onEnterExperience={onEnterExperience} /> : null}
             </div>
           </div>
         );

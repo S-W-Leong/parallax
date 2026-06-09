@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Activity, CheckCircle2, Cpu, History, MessageSquare } from "lucide-react";
 import type { ArtifactCommand, ArtifactRecord, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatThread } from "@/components/chat/ChatThread";
@@ -36,6 +37,7 @@ export function ParallaxArtifactApp() {
   const [busy, setBusy] = useState(false);
   const activeArtifact = state.activeArtifactId ? state.artifacts[state.activeArtifactId] : null;
   const lastArtifact = state.lastArtifactId ? state.artifacts[state.lastArtifactId] : null;
+  const artifacts = useMemo(() => Object.values(state.artifacts).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [state.artifacts]);
   const chatShellClass = useMemo(() => (lastArtifact ? "chat-shell has-preview" : "chat-shell"), [lastArtifact]);
 
   async function sendChatMessage(message: string) {
@@ -105,8 +107,9 @@ export function ParallaxArtifactApp() {
   if (!hydrated) {
     return (
       <main className="lab-shell">
-        <section className="chat-home">
+        <section className="boot-panel">
           <div className="lab-mark">Parallax</div>
+          <p className="eyebrow">Session restore</p>
         </section>
       </main>
     );
@@ -135,7 +138,7 @@ export function ParallaxArtifactApp() {
   }
 
   return (
-    <main className="threaded-app-shell">
+    <main className="app-shell">
       <ThreadSidebar
         threads={threads}
         activeThreadId={activeThreadId}
@@ -143,13 +146,113 @@ export function ParallaxArtifactApp() {
         onSelectThread={(threadId) => void selectThread(threadId)}
         onArchiveThread={(threadId) => void archiveThread(threadId)}
       />
-      <section className={chatShellClass}>
-        <header className="app-header">
-          <div className="lab-mark">Parallax</div>
+
+      <section className="console-main" id="console">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">Interactive generation console</p>
+            <h2>3D Learning Room Builder</h2>
+          </div>
+          <div className="topbar-actions">
+            <span className="pill accent">SANDBOXED</span>
+            <span className="pill">3D RUNTIME</span>
+          </div>
         </header>
-        <ChatThread messages={state.messages} artifacts={state.artifacts} trace={state.trace} onEnterExperience={enterExperience} />
-        {lastArtifact ? <CollapsedArtifactPreview artifact={lastArtifact} onEnterExperience={enterExperience} /> : null}
-        <ChatComposer disabled={busy} placeholder="Ask to learn any STEM topic" onSubmit={sendChatMessage} />
+
+        <div className="console-grid">
+          <section className="hero-panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Topic intake</p>
+                <h3>What should we build into 3D?</h3>
+              </div>
+              <span className="metric-badge">{busy ? "AGENT ACTIVE" : "READY"}</span>
+            </div>
+            <ChatComposer disabled={busy} placeholder="Ask to learn any STEM topic" onSubmit={sendChatMessage} />
+             <div className="prompt-grid">
+               {["Explain a fusion reactor", "Build a neuron synapse", "Show orbital resonance", "Model DNA replication"].map((prompt) => (
+                 <button className="prompt-chip" key={prompt} type="button" onClick={() => void sendChatMessage(prompt)} disabled={busy}>
+                   {prompt}
+                 </button>
+               ))}
+            </div>
+          </section>
+
+          <section className={chatShellClass}>
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Conversation / proposals</p>
+                <h3>Agent Output</h3>
+              </div>
+              <MessageSquare size={18} />
+            </div>
+            <ChatThread messages={state.messages} artifacts={state.artifacts} trace={state.trace} onEnterExperience={enterExperience} />
+            {lastArtifact ? <CollapsedArtifactPreview artifact={lastArtifact} onEnterExperience={enterExperience} /> : null}
+          </section>
+
+          <aside className="right-rail">
+            <section className="metric-panel">
+              <div className="metric-card">
+                <p className="eyebrow">Generated rooms</p>
+                <strong>{artifacts.length}</strong>
+              </div>
+              <div className="metric-card">
+                <p className="eyebrow">Trace events</p>
+                <strong>{state.trace.length}</strong>
+              </div>
+            </section>
+
+            <section className="dashboard-panel">
+              <div className="panel-heading compact">
+                <p className="eyebrow">
+                  <Activity size={14} /> Agent Trace
+                </p>
+                <span className="pill">LOG</span>
+              </div>
+              <div className="log-list">
+                {(state.trace.length ? state.trace : ["topic parser idle", "scene compiler idle", "validator standing by"]).map((item) => (
+                  <div className="log-row" key={item}>
+                    <CheckCircle2 size={14} />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="dashboard-panel" id="rooms">
+              <div className="panel-heading compact">
+                <p className="eyebrow">
+                  <History size={14} /> Recent Rooms
+                </p>
+              </div>
+              <div className="room-list">
+                {(artifacts.length ? artifacts.slice(0, 4) : []).map((artifact) => (
+                  <button className="room-row" key={artifact.id} onClick={() => enterExperience(artifact.id)}>
+                    <span>{artifact.title}</span>
+                    <small>{artifact.components.length} components</small>
+                  </button>
+                ))}
+                {!artifacts.length ? <p className="muted tight">Generated learning rooms will appear here.</p> : null}
+              </div>
+            </section>
+
+            <section className="dashboard-panel" id="checks">
+              <div className="panel-heading compact">
+                <p className="eyebrow">
+                  <Cpu size={14} /> System Checks
+                </p>
+              </div>
+              <div className="check-grid">
+                <span>Iframe sandbox</span>
+                <strong>ON</strong>
+                <span>Three runtime</span>
+                <strong>LOCAL</strong>
+                <span>Tutor agent</span>
+                <strong>{busy ? "BUSY" : "READY"}</strong>
+              </div>
+            </section>
+           </aside>
+         </div>
       </section>
     </main>
   );

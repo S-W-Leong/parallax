@@ -56,6 +56,21 @@ describe("session reducer", () => {
     expect(selected.messages.at(-1)).toMatchObject({ role: "system", content: "Selected: Nucleus" });
   });
 
+  it("tags tutor user messages with the active artifact", () => {
+    const inRoom = sessionReducer(
+      sessionReducer(createEmptySession(), { type: "artifact_created", artifact, trace: [] }),
+      { type: "enter_experience", artifactId: artifact.id },
+    );
+
+    const withTutorQuestion = sessionReducer(inRoom, { type: "user_message", content: "Focus the nucleus" });
+
+    expect(withTutorQuestion.messages.at(-1)).toMatchObject({
+      role: "user",
+      content: "Focus the nucleus",
+      artifactId: artifact.id,
+    });
+  });
+
   it("returns to chat while retaining a collapsed artifact preview", () => {
     const inRoom = sessionReducer(
       sessionReducer(createEmptySession(), { type: "artifact_created", artifact, trace: [] }),

@@ -26,6 +26,22 @@ describe("artifact validation", () => {
     expect(result.error).toContain("network");
   });
 
+  it("rejects JavaScript syntax errors before creating an artifact", () => {
+    const invalidSceneSource = `
+const 3DModel = new THREE.Group();
+root.add(3DModel);
+registerComponent("model", "Model", 3DModel, {});
+registerComponent("part-a", "Part A", 3DModel, {});
+registerComponent("part-b", "Part B", 3DModel, {});
+setWalkthroughSteps([{ id: "intro", title: "Intro", narration: "Start here.", targetComponentIds: ["model"] }]);
+`;
+
+    const result = validateSceneSource(invalidSceneSource);
+
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).toContain("Generated scene source has invalid JavaScript syntax");
+  });
+
   it("builds an artifact record only after scene validation passes", () => {
     const result = createArtifactRecord({
       topic: "cells",
