@@ -68,11 +68,54 @@ describe("session reducer", () => {
     expect(exited.lastArtifactId).toBe(artifact.id);
   });
 
+  it("resets persisted chat and artifact state to a fresh session", () => {
+    const withArtifact = sessionReducer(createEmptySession(), { type: "artifact_created", artifact, trace: ["Validated artifact"] });
+    const inRoom = sessionReducer(withArtifact, { type: "enter_experience", artifactId: artifact.id });
+    const reset = sessionReducer(inRoom, { type: "reset_session" });
+
+    expect(reset).toMatchObject({
+      mode: "chat",
+      messages: [],
+      artifacts: {},
+      activeArtifactId: null,
+      lastArtifactId: null,
+      selectedComponent: null,
+      activeStepId: null,
+      pendingCommands: [],
+      trace: [],
+    });
+    expect(reset.id).not.toBe(inRoom.id);
+  });
+
+  it("replaces active state with a loaded persisted thread session", () => {
+    const existing = sessionReducer(createEmptySession(), { type: "user_message", content: "Old local chat" });
+    const loaded = {
+      ...createEmptySession(),
+      id: "thread-1",
+      messages: [{ id: "message-1", role: "user" as const, content: "Persisted chat", createdAt: "2026-06-09T14:00:00.000Z" }],
+    };
+
+    const next = sessionReducer(existing, { type: "session_loaded", session: loaded });
+
+    expect(next.id).toBe("thread-1");
+    expect(next.messages).toHaveLength(1);
+    expect(next.messages[0].content).toBe("Persisted chat");
+  });
+
   it("round trips persisted session state", () => {
     const withMessage = sessionReducer(createEmptySession(), { type: "user_message", content: "Teach me CRISPR" });
     const encoded = encodeSession(withMessage);
     const restored = parseStoredSession(encoded);
 
     expect(restored.messages[0]).toMatchObject({ role: "user", content: "Teach me CRISPR" });
+  });
+
+  it("drops sessions from older storage versions", () => {
+    const withMessage = sessionReducer(createEmptySession(), { type: "user_message", content: "Teach me CRISPR" });
+    const legacy = JSON.stringify({ version: 1, ...withMessage });
+    const restored = parseStoredSession(legacy);
+
+    expect(restored.messages).toEqual([]);
+    expect(restored.id).not.toBe(withMessage.id);
   });
 });

@@ -1,6 +1,7 @@
 import type { ArtifactCommand, ArtifactRecord, ChatMessage, LearningSession, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 
 export type SessionAction =
+  | { type: "session_loaded"; session: LearningSession }
   | { type: "user_message"; content: string }
   | { type: "assistant_message"; content: string; artifactId?: string }
   | { type: "system_event"; content: string; artifactId?: string }
@@ -11,7 +12,8 @@ export type SessionAction =
   | { type: "step_changed"; stepId: string; title: string }
   | { type: "artifact_error"; message: string }
   | { type: "enqueue_commands"; commands: ArtifactCommand[] }
-  | { type: "clear_pending_commands" };
+  | { type: "clear_pending_commands" }
+  | { type: "reset_session" };
 
 function makeId(prefix: string): string {
   const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -49,6 +51,10 @@ export function createEmptySession(): LearningSession {
 
 export function sessionReducer(state: LearningSession, action: SessionAction): LearningSession {
   switch (action.type) {
+    case "session_loaded":
+      return action.session;
+    case "reset_session":
+      return createEmptySession();
     case "user_message":
       return { ...state, messages: [...state.messages, message("user", action.content)] };
     case "assistant_message":
