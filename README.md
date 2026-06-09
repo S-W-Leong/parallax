@@ -15,10 +15,20 @@ Open `http://localhost:3000`.
 
 `EXA_API_KEY` enables live source retrieval for `POST /api/compile`. Without it, the compiler route returns the validated cached fallback lesson and records the fallback in the activity log.
 
+For planned LLM-backed compiler and tutor routes, prefer a direct OpenAI provider key:
+
+```bash
+OPENAI_API_KEY=
+```
+
+The app currently does not call OpenAI yet; `/api/ask` and `/api/quiz` are deterministic MVP routes. When LLM calls are added, use the Vercel AI SDK with the OpenAI provider and `OPENAI_API_KEY`.
+
+`AI_GATEWAY_API_KEY` is optional and only needed if you intentionally route model calls through Vercel AI Gateway instead of calling OpenAI directly. Do not set both paths unless the code explicitly supports choosing between them.
+
 Optional AWS cache variables:
 
 ```bash
-AWS_REGION=
+AWS_REGION= # or AWS_DEFAULT_REGION=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 PARALLAX_S3_BUCKET=

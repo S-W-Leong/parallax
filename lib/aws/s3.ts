@@ -3,15 +3,16 @@ import cachedLesson from "@/data/cached-jet-engine-lesson.json";
 import { parseLesson, type Lesson } from "@/lib/engine/lessonTypes";
 
 function getClient() {
-  const { AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, PARALLAX_S3_BUCKET } = process.env;
-  if (!AWS_REGION || !AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !PARALLAX_S3_BUCKET) {
+  const { AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, PARALLAX_S3_BUCKET } = process.env;
+  const region = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION;
+  if (!region || !AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !PARALLAX_S3_BUCKET) {
     throw new Error("AWS cache environment variables are not configured");
   }
 
   return {
     bucket: PARALLAX_S3_BUCKET,
     client: new S3Client({
-      region: AWS_REGION,
+      region,
       credentials: {
         accessKeyId: AWS_ACCESS_KEY_ID,
         secretAccessKey: AWS_SECRET_ACCESS_KEY,

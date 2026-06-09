@@ -109,6 +109,21 @@ flowchart LR
 ```
 
 
+## Model Provider Configuration
+
+The preferred implementation path is to use the Vercel AI SDK with a direct OpenAI provider key:
+
+```bash
+OPENAI_API_KEY=
+```
+
+In that setup, Next.js API routes call OpenAI through the AI SDK provider package, and the app does not need `AI_GATEWAY_API_KEY`.
+
+Vercel AI Gateway remains an optional routing layer. Use `AI_GATEWAY_API_KEY` only if the project intentionally routes model calls through Vercel AI Gateway for centralized provider credentials, observability, routing, or failover.
+
+The current MVP has the `ai` package installed but does not yet make live LLM calls. `/api/ask` and `/api/quiz` are deterministic routes, and `/api/compile` uses Exa plus the cached lesson template.
+
+
 
 ## Lesson Compilation Mode
 
@@ -238,4 +253,3 @@ flowchart TD
 - **Visible trace**: compilation logs are shown to judges so the agentic work is inspectable.
 - **Hybrid reliability**: Exa is used live, but cached lesson fallback keeps the demo safe.
 - **Input abstraction**: mouse, touch, and optional MediaPipe all emit the same component-selection events.
-
