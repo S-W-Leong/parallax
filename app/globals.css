@@ -87,6 +87,75 @@ textarea::placeholder {
   padding: 24px;
 }
 
+.threaded-app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  background: var(--bg);
+}
+
+.threaded-app-shell > .chat-shell {
+  align-self: center;
+  justify-self: center;
+}
+
+.thread-sidebar {
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: rgba(10, 13, 18, 0.98);
+  padding: 12px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+}
+
+.thread-sidebar header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.thread-sidebar nav {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.thread-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 6px;
+  align-items: center;
+}
+
+.thread-item > button:first-child {
+  min-width: 0;
+  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  text-align: left;
+}
+
+.thread-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-item small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.thread-item.active > button:first-child {
+  border-color: var(--accent);
+  background: #1d2b2d;
+}
+
 .chat-shell {
   width: min(840px, 100%);
   height: min(880px, calc(100vh - 48px));
@@ -113,6 +182,13 @@ textarea::placeholder {
   padding: 8px 10px;
   font-size: 13px;
   font-weight: 700;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .empty-thread {
@@ -454,8 +530,42 @@ textarea::placeholder {
     padding: 14px;
   }
 
+  .threaded-app-shell {
+    height: 100vh;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .threaded-app-shell > .chat-shell {
+    align-self: stretch;
+    padding: 0 14px 14px;
+  }
+
+  .thread-sidebar {
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    grid-template-rows: auto auto;
+    padding: 10px;
+  }
+
+  .thread-sidebar nav {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .thread-item {
+    min-width: 216px;
+  }
+
   .chat-shell {
     height: calc(100vh - 28px);
+  }
+
+  .threaded-app-shell .chat-shell {
+    height: 100%;
   }
 
   .empty-thread h1,

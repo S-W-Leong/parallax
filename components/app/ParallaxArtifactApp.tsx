@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 import type { ArtifactCommand, ArtifactRecord, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatThread } from "@/components/chat/ChatThread";
+import { ThreadSidebar } from "@/components/chat/ThreadSidebar";
 import { CollapsedArtifactPreview } from "@/components/experience/CollapsedArtifactPreview";
 import { LearningRoom } from "@/components/experience/LearningRoom";
-import { usePersistentSession } from "@/lib/session/usePersistentSession";
+import { useThreadSession } from "@/lib/session/useThreadSession";
 
 type ChatAgentResponse = {
   message: string;
@@ -15,7 +16,7 @@ type ChatAgentResponse = {
   error: string | null;
 };
 
-type TutorAgentResponse = {
+type LearningRoomAgentResponse = {
   message: string;
   commands: ArtifactCommand[];
 };
@@ -31,7 +32,7 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 export function ParallaxArtifactApp() {
-  const [state, dispatch, hydrated] = usePersistentSession();
+  const { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread } = useThreadSession();
   const [busy, setBusy] = useState(false);
   const activeArtifact = state.activeArtifactId ? state.artifacts[state.activeArtifactId] : null;
   const lastArtifact = state.lastArtifactId ? state.artifacts[state.lastArtifactId] : null;
@@ -41,10 +42,10 @@ export function ParallaxArtifactApp() {
     dispatch({ type: "user_message", content: message });
     setBusy(true);
     try {
-      const response = await fetch("/api/agent/chat", {
+      const response = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, messages: state.messages }),
+        body: JSON.stringify({ mode: "chat", threadId: activeThreadId, userId, message, messages: state.messages }),
       });
       const data = await readJson<ChatAgentResponse>(response);
       if (data.artifact) {
@@ -54,21 +55,24 @@ export function ParallaxArtifactApp() {
         if (data.error) dispatch({ type: "system_event", content: data.error });
       }
     } catch (error) {
-      dispatch({ type: "system_event", content: error instanceof Error ? error.message : "Unknown chat agent error" });
+      dispatch({ type: "system_event", content: error instanceof Error ? error.message : "Unknown agent error" });
     } finally {
       setBusy(false);
     }
   }
 
-  async function sendTutorMessage(message: string) {
+  async function sendLearningRoomMessage(message: string) {
     if (!activeArtifact) return;
     dispatch({ type: "user_message", content: message });
     setBusy(true);
     try {
-      const response = await fetch("/api/agent/tutor", {
+      const response = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mode: "learning_room",
+          threadId: activeThreadId,
+          userId,
           message,
           artifact: activeArtifact,
           messages: state.messages,
@@ -76,11 +80,11 @@ export function ParallaxArtifactApp() {
           activeStepId: state.activeStepId,
         }),
       });
-      const data = await readJson<TutorAgentResponse>(response);
+      const data = await readJson<LearningRoomAgentResponse>(response);
       dispatch({ type: "assistant_message", content: data.message, artifactId: activeArtifact.id });
       if (data.commands.length) dispatch({ type: "enqueue_commands", commands: data.commands });
     } catch (error) {
-      dispatch({ type: "system_event", content: error instanceof Error ? error.message : "Unknown tutor agent error", artifactId: activeArtifact.id });
+      dispatch({ type: "system_event", content: error instanceof Error ? error.message : "Unknown learning-room agent error", artifactId: activeArtifact.id });
     } finally {
       setBusy(false);
     }
@@ -92,6 +96,10 @@ export function ParallaxArtifactApp() {
 
   function selectComponent(component: SelectedComponent) {
     dispatch({ type: "component_selected", component });
+  }
+
+  function resetSession() {
+    void createThread();
   }
 
   if (!hydrated) {
@@ -115,7 +123,8 @@ export function ParallaxArtifactApp() {
         selectedComponent={state.selectedComponent}
         busy={busy}
         onExit={() => dispatch({ type: "exit_experience" })}
-        onTutorMessage={sendTutorMessage}
+        onResetSession={resetSession}
+        onLearningRoomMessage={sendLearningRoomMessage}
         onCommandsFlushed={() => dispatch({ type: "clear_pending_commands" })}
         onComponentSelected={selectComponent}
         onStepChanged={(stepId, title) => dispatch({ type: "step_changed", stepId, title })}
@@ -126,9 +135,18 @@ export function ParallaxArtifactApp() {
   }
 
   return (
-    <main className="lab-shell">
+    <main className="threaded-app-shell">
+      <ThreadSidebar
+        threads={threads}
+        activeThreadId={activeThreadId}
+        onCreateThread={() => void createThread()}
+        onSelectThread={(threadId) => void selectThread(threadId)}
+        onArchiveThread={(threadId) => void archiveThread(threadId)}
+      />
       <section className={chatShellClass}>
-        <div className="lab-mark">Parallax</div>
+        <header className="app-header">
+          <div className="lab-mark">Parallax</div>
+        </header>
         <ChatThread messages={state.messages} artifacts={state.artifacts} trace={state.trace} onEnterExperience={enterExperience} />
         {lastArtifact ? <CollapsedArtifactPreview artifact={lastArtifact} onEnterExperience={enterExperience} /> : null}
         <ChatComposer disabled={busy} placeholder="Ask to learn any STEM topic" onSubmit={sendChatMessage} />
