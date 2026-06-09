@@ -49,4 +49,23 @@ setWalkthroughSteps([{ id: "intro", title: "Field shape", narration: "Field line
     expect(html).toMatch(/<\\+\/script>/);
     expect(html).toContain("&lt;/script&gt;&lt;img");
   });
+
+  it("starts rendering before generated scene code can throw", () => {
+    const html = renderArtifactHtml({
+      id: "artifact-3",
+      title: "Fragile Scene",
+      topic: "debugging",
+      summary: "Checks runtime resilience.",
+      sceneSource: `throw new Error("Generated scene failed"); registerComponent("a","A",root,{}); registerComponent("b","B",root,{}); registerComponent("c","C",root,{}); setWalkthroughSteps([{id:"s",title:"S",narration:"N",targetComponentIds:["a"]}]);`,
+      components: [
+        { id: "a", label: "A" },
+        { id: "b", label: "B" },
+        { id: "c", label: "C" },
+      ],
+      walkthroughSteps: [{ id: "s", title: "S", narration: "N", targetComponentIds: ["a"] }],
+    });
+
+    expect(html.indexOf("animate();")).toBeLessThan(html.indexOf("runScene("));
+    expect(html).toContain("error.stack");
+  });
 });

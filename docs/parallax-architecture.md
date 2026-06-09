@@ -1,30 +1,33 @@
 # Parallax Architecture
 
-Parallax is a chat-first STEM learning app. A user asks for a topic, the OpenAI Agents SDK Orchestrator generates a sandboxed Three.js artifact, and the user enters a learning room with the canvas on the left and tutor chat on the right.
+Parallax is a chat-first STEM learning app. A single OpenAI Agents SDK agent handles normal conversation, creates sandboxed Three.js artifacts when useful, and controls the active learning room through tools.
 
 ## Product Flow
 
 ```mermaid
 flowchart TD
-  A[Centered chat] --> B[User asks for a STEM topic]
-  B --> C[Orchestrator Agent]
-  C --> D[create_experience tool]
-  D --> E[Static artifact validation]
-  E -- valid --> F[Proposal card]
-  E -- invalid --> G[Raw validation error in chat]
-  F --> H[Enter Experience]
-  H --> I[Learning room]
-  I --> J[Sandboxed Three.js iframe]
-  I --> K[Tutor chat]
-  J --> L[Component selected event]
-  J --> M[Walkthrough step event]
-  L --> K
-  M --> K
-  K --> N[Tutor Agent]
-  N --> O[send_artifact_command tool]
-  O --> J
-  I --> P[Exit]
-  P --> A
+  A[Centered chat] --> B[User message]
+  B --> C[/api/agent mode: chat]
+  C --> D[Parallax Agent]
+  D -- normal chat --> E[Assistant reply]
+  D -- artifact needed --> F[create_experience tool]
+  F --> G[Static artifact validation]
+  G -- valid --> H[Proposal card]
+  G -- invalid --> I[Raw validation error in chat]
+  H --> J[Enter Experience]
+  J --> K[Learning room]
+  K --> L[Sandboxed Three.js iframe]
+  K --> M[Room chat]
+  L --> N[Component selected event]
+  L --> O[Walkthrough step event]
+  N --> M
+  O --> M
+  M --> P[/api/agent mode: learning_room]
+  P --> D
+  D -- command useful --> Q[send_artifact_command tool]
+  Q --> L
+  K --> R[Exit]
+  R --> A
 ```
 
 ## Runtime Boundaries
@@ -39,14 +42,13 @@ flowchart LR
   end
 
   subgraph NextRoutes[Next.js API Routes]
-    ChatAPI[/api/agent/chat]
-    TutorAPI[/api/agent/tutor]
+    AgentAPI[/api/agent]
   end
 
   subgraph Agents[OpenAI Agents SDK]
-    Orchestrator[Orchestrator Agent]
-    Tutor[Tutor Agent]
+    Agent[Parallax Agent]
     CreateTool[create_experience]
+    ResearchTool[research_stem_topic]
     CommandTool[send_artifact_command]
   end
 
@@ -57,10 +59,11 @@ flowchart LR
     Bridge[postMessage Contract]
   end
 
-  Chat --> ChatAPI
+  Chat --> AgentAPI
   Chat --> Store
-  ChatAPI --> Orchestrator
-  Orchestrator --> CreateTool
+  AgentAPI --> Agent
+  Agent --> ResearchTool
+  Agent --> CreateTool
   CreateTool --> Validator
   Validator --> Template
   Template --> Chat
@@ -69,11 +72,39 @@ flowchart LR
   Frame --> Three
   Frame --> Bridge
   Bridge --> Room
-  Room --> TutorAPI
-  TutorAPI --> Tutor
-  Tutor --> CommandTool
+  Room --> AgentAPI
+  Agent --> CommandTool
   CommandTool --> Bridge
 ```
+
+## Agent API Contract
+
+The app has one agent endpoint: `POST /api/agent`.
+
+Main chat sends:
+
+```json
+{
+  "mode": "chat",
+  "message": "Teach me jet engines",
+  "messages": []
+}
+```
+
+Learning room chat sends:
+
+```json
+{
+  "mode": "learning_room",
+  "message": "Focus the combustor",
+  "artifact": {},
+  "messages": [],
+  "selectedComponent": null,
+  "activeStepId": "intro"
+}
+```
+
+The route gives the same Parallax Agent different tools based on mode. Main chat gets `research_stem_topic` and `create_experience`. Learning room chat gets `send_artifact_command` plus active artifact context.
 
 ## Artifact Contract
 
@@ -114,5 +145,6 @@ The parent sends commands back:
 - **One-shot artifacts**: v1 creates the best complete experience in one pass instead of editing artifacts in place.
 - **Sandboxed iframe**: generated code runs in an iframe with a strict `postMessage` bridge.
 - **Fixed runtime, generated scene**: the app owns controls, labels, walkthrough UI, and validation.
-- **OpenAI Agents SDK**: Next.js routes host the Orchestrator and Tutor agents with explicit tools.
+- **Single Parallax Agent**: one Agents SDK agent handles chat, artifact creation, and room control with mode-specific tools.
+- **Single agent endpoint**: `/api/agent` accepts a mode-discriminated payload instead of separate mode-specific routes.
 - **Local persistence**: browser storage keeps the chat, generated artifacts, and room state available after refresh.

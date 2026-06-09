@@ -19,7 +19,7 @@ OPENAI_MODEL=gpt-5.4
 EXA_API_KEY=
 ```
 
-`OPENAI_API_KEY` is required for live artifact creation and tutor chat. `OPENAI_MODEL` is optional and defaults to `gpt-5.4`. `EXA_API_KEY` is optional; when absent or failing, the Orchestrator continues from model knowledge.
+`OPENAI_API_KEY` is required for live artifact creation and learning-room chat. `OPENAI_MODEL` is optional and defaults to `gpt-5.4`. `EXA_API_KEY` is optional; when absent or failing, the Parallax Agent continues from model knowledge.
 
 ## Verification
 

@@ -177,7 +177,8 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
     }
 
     function formatError(error) {
-      return error instanceof Error ? error.message : String(error);
+      if (!(error instanceof Error)) return String(error);
+      return error.stack || error.message;
     }
 
     loadThree().then((THREE) => {
@@ -427,6 +428,8 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         renderer.render(scene, camera);
       }
 
+      animate();
+
       try {
         const runScene = new Function(
           "THREE",
@@ -443,7 +446,6 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         );
         runScene(THREE, scene, camera, renderer, root, controls, window.registerComponent, window.setWalkthroughSteps, window.setStatus, window.fitCameraTo);
         window.setWalkthroughSteps(walkthroughSteps);
-        animate();
         setStatus("Artifact ready. Drag to rotate, scroll to zoom, click parts to inspect.");
         postArtifactEvent({ type: "artifact_ready" });
       } catch (error) {

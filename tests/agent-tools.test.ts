@@ -61,7 +61,7 @@ describe("agent tools", () => {
     expect(sink.getResult()).toMatchObject({ ok: false });
   });
 
-  it("records tutor artifact commands", async () => {
+  it("records learning-room artifact commands", async () => {
     const sink = makeSendArtifactCommandSink();
     await sink.tool.invoke(undefined as never, JSON.stringify({ type: "focus_component", componentId: "nucleus", stepId: null }));
     await sink.tool.invoke(undefined as never, JSON.stringify({ type: "explode", componentId: null, stepId: null }));
