@@ -39,4 +39,15 @@ describe("learningOutcomesForArtifact", () => {
       "See how thrust forms",
     ]);
   });
+
+  it("fills insufficient walkthrough outcomes from component labels", () => {
+    expect(
+      learningOutcomesForArtifact({
+        ...baseArtifact,
+        walkthroughSteps: [
+          { id: "airflow", title: "Trace airflow", narration: "Follow air from intake to exhaust.", targetComponentIds: ["fan"] },
+        ],
+      }),
+    ).toEqual(["Trace airflow", "Explore fan", "Explore compressor"]);
+  });
 });
