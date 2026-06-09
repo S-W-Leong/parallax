@@ -20,6 +20,18 @@ async function assertOk(response: Response): Promise<void> {
   if (!response.ok) throw new Error("Thread API request failed");
 }
 
+async function createThreadForUser(userId: string): Promise<PersistedThreadSummary> {
+  const data = await readJson<CreateThreadResponse>(
+    await fetch("/api/threads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, title: "New chat" }),
+    }),
+  );
+
+  return data.thread;
+}
+
 export function useThreadSession(): {
   userId: string | null;
   activeThreadId: string | null;
@@ -62,6 +74,12 @@ export function useThreadSession(): {
         setThreads(data.threads);
         if (data.threads[0]) {
           await loadThreadForUser(nextUserId, data.threads[0].id);
+        } else {
+          const thread = await createThreadForUser(nextUserId);
+          if (!active) return;
+          setThreads([thread]);
+          setActiveThreadId(thread.id);
+          dispatch({ type: "session_loaded", session: { ...createEmptySession(), id: thread.id } });
         }
       } finally {
         if (active) setHydrated(true);
@@ -78,16 +96,10 @@ export function useThreadSession(): {
   const createThread = useCallback(async () => {
     if (!userId) return;
 
-    const data = await readJson<CreateThreadResponse>(
-      await fetch("/api/threads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, title: "New chat" }),
-      }),
-    );
-    setThreads((current) => [data.thread, ...current]);
-    setActiveThreadId(data.thread.id);
-    dispatch({ type: "session_loaded", session: { ...createEmptySession(), id: data.thread.id } });
+    const thread = await createThreadForUser(userId);
+    setThreads((current) => [thread, ...current]);
+    setActiveThreadId(thread.id);
+    dispatch({ type: "session_loaded", session: { ...createEmptySession(), id: thread.id } });
   }, [userId]);
 
   const selectThread = useCallback(
