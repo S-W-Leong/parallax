@@ -3,6 +3,7 @@ import { z } from "zod";
 import { artifactRecordSchema, chatMessageSchema, selectedComponentSchema, type ChatMessage } from "@/lib/artifacts/artifactTypes";
 import { makeOrchestratorAgent, makeTutorAgent } from "./agents";
 import { makeCreateExperienceToolSink } from "./tools/createExperienceTool";
+import { makeResearchStemTopicTool } from "./tools/researchStemTopicTool";
 import { makeSendArtifactCommandSink } from "./tools/sendArtifactCommandTool";
 
 export const chatRouteRequestSchema = z.object({
@@ -41,7 +42,8 @@ export async function handleChatRoute(input: unknown) {
   requireOpenAiKey();
   const request = chatRouteRequestSchema.parse(input);
   const createExperience = makeCreateExperienceToolSink();
-  const agent = makeOrchestratorAgent([createExperience.tool]);
+  const researchStemTopic = makeResearchStemTopicTool();
+  const agent = makeOrchestratorAgent([researchStemTopic, createExperience.tool]);
   const history = recentConversation(request.messages);
   const prompt = `${history ? `Conversation so far:\n${history}\n\n` : ""}User request:\n${request.message}`;
 

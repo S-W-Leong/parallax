@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeCreateExperienceToolSink } from "@/lib/agent/tools/createExperienceTool";
+import { makeResearchStemTopicTool } from "@/lib/agent/tools/researchStemTopicTool";
 import { makeSendArtifactCommandSink } from "@/lib/agent/tools/sendArtifactCommandTool";
 
 const sceneSource = `
@@ -33,6 +34,14 @@ describe("agent tools", () => {
     expect(sink.getResult()).toMatchObject({ ok: true, artifact: { title: "Inside a Cell" } });
   });
 
+  it("does not expose tuple-style JSON schema arrays to OpenAI", () => {
+    const sink = makeCreateExperienceToolSink();
+    const serialized = JSON.stringify(sink.tool.parameters);
+
+    expect(serialized).not.toContain('"items":[{');
+    expect(serialized).not.toContain("propertyNames");
+  });
+
   it("keeps the raw validation error when create_experience fails", async () => {
     const sink = makeCreateExperienceToolSink();
     const output = await sink.tool.invoke(undefined as never, JSON.stringify({
@@ -61,5 +70,20 @@ describe("agent tools", () => {
       { type: "focus_component", componentId: "nucleus" },
       { type: "explode" },
     ]);
+  });
+
+  it("returns a graceful research response without EXA_API_KEY", async () => {
+    const original = process.env.EXA_API_KEY;
+    delete process.env.EXA_API_KEY;
+    const researchTool = makeResearchStemTopicTool();
+
+    const output = await researchTool.invoke(undefined as never, JSON.stringify({ query: "quantum dots in solar cells" }));
+
+    expect(output).toMatchObject({ ok: true, sources: [] });
+    if (original) {
+      process.env.EXA_API_KEY = original;
+    } else {
+      delete process.env.EXA_API_KEY;
+    }
   });
 });

@@ -50,4 +50,24 @@ describe("artifact validation", () => {
       expect(result.artifact.components).toHaveLength(3);
     }
   });
+
+  it("rejects declared components that are not referenced by scene source", () => {
+    const result = createArtifactRecord({
+      topic: "cells",
+      title: "Inside a Cell",
+      summary: "A guided model of cell structures.",
+      sceneSource: validSceneSource,
+      components: [
+        { id: "membrane", label: "Cell membrane" },
+        { id: "nucleus", label: "Nucleus" },
+        { id: "missing", label: "Missing part" },
+      ],
+      walkthroughSteps: [
+        { id: "step-1", title: "Find the membrane", narration: "The membrane controls what enters.", targetComponentIds: ["membrane"] },
+      ],
+    });
+
+    expect(result).toMatchObject({ ok: false });
+    if (!result.ok) expect(result.error).toContain("missing");
+  });
 });

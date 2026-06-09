@@ -1,255 +1,118 @@
 # Parallax Architecture
 
-Parallax is split into two product modes:
-
-1. **Lesson Compilation Mode**: the user asks what they want to learn, and the Lesson Compiler turns that request into a validated lesson artifact.
-2. **Runtime Tutor Mode**: the user enters the interactive 3D cutaway experience, where the Runtime Tutor answers questions, observes selections, quizzes, and re-teaches.
+Parallax is a chat-first STEM learning app. A user asks for a topic, the OpenAI Agents SDK Orchestrator generates a sandboxed Three.js artifact, and the user enters a learning room with the canvas on the left and tutor chat on the right.
 
 ## Product Flow
 
 ```mermaid
 flowchart TD
-  A[User asks what to learn] --> B[Lesson Compilation Mode]
-
-  B --> C[Classify topic]
-  C --> D{Matching machine template?}
-  D -- yes --> E[Use jet_engine template]
-  D -- no --> F[Fallback: explain supported templates]
-
-  E --> G[Search Exa for mechanism sources]
-  G --> H[Extract mechanism stages]
-  H --> I[Map stages to 3D rig components]
-  I --> J[Generate lesson JSON]
-  J --> K[Validate with Zod]
-
-  K -- valid --> L[Cache lesson artifact]
-  K -- invalid --> M[Retry once]
+  A[Centered chat] --> B[User asks for a STEM topic]
+  B --> C[Orchestrator Agent]
+  C --> D[create_experience tool]
+  D --> E[Static artifact validation]
+  E -- valid --> F[Proposal card]
+  E -- invalid --> G[Raw validation error in chat]
+  F --> H[Enter Experience]
+  H --> I[Learning room]
+  I --> J[Sandboxed Three.js iframe]
+  I --> K[Tutor chat]
+  J --> L[Component selected event]
+  J --> M[Walkthrough step event]
+  L --> K
   M --> K
-  K -- still invalid --> N[Use cached hero lesson]
-
-  L --> O[Show lesson plan preview]
-  N --> O
-  O --> P[User clicks Start Experience]
-  P --> Q[Runtime Tutor Mode]
-
-  Q --> R[3D cutaway lesson plays]
-  R --> S[User selects component]
-  S --> T[User asks voice/text question]
-  T --> U[Runtime Tutor answers with selected context]
-  R --> V[Quiz checkpoint]
-  V --> W{Answer correct?}
-  W -- yes --> X[Continue / complete lesson]
-  W -- no --> Y[Diagnose misconception]
-  Y --> Z[Trigger isolate + replay re-teach]
-  Z --> R
+  K --> N[Tutor Agent]
+  N --> O[send_artifact_command tool]
+  O --> J
+  I --> P[Exit]
+  P --> A
 ```
 
-
-
-## System Architecture
+## Runtime Boundaries
 
 ```mermaid
 flowchart LR
-  subgraph Browser[Browser / Vercel Frontend]
-    UI[Next.js UI]
-    Canvas[React Three Fiber Jet Engine Cutaway]
-    Panel[Agent Panel]
-    Voice[Push-to-talk Voice + Text Fallback]
-    Mouse[Mouse / Touch Selection]
-    Hand[Optional MediaPipe Hand Input]
+  subgraph Browser
+    Chat[Centered Chat UI]
+    Room[Learning Room]
+    Frame[Sandboxed Artifact Iframe]
+    Store[LocalStorage Session]
   end
 
-  subgraph Runtime[Runtime Tutor Layer]
-    AskAPI[/api/ask]
-    QuizAPI[/api/quiz]
-    Tutor[Runtime Tutor Agent]
+  subgraph NextRoutes[Next.js API Routes]
+    ChatAPI[/api/agent/chat]
+    TutorAPI[/api/agent/tutor]
   end
 
-  subgraph Compile[Lesson Compilation Layer]
-    CompileAPI[/api/compile]
-    Compiler[Lesson Compiler v1]
-    Schema[Zod Lesson Schema]
-    Trace[Compiler Trace Events]
+  subgraph Agents[OpenAI Agents SDK]
+    Orchestrator[Orchestrator Agent]
+    Tutor[Tutor Agent]
+    CreateTool[create_experience]
+    CommandTool[send_artifact_command]
   end
 
-  subgraph Services[Sponsor / Cloud Services]
-    Exa[Exa Search]
-    Gateway[Vercel AI SDK / AI Gateway]
-    S3[AWS S3 Lesson Cache]
-    Polly[Optional AWS Polly TTS]
+  subgraph ArtifactRuntime[Fixed Artifact Runtime]
+    Template[HTML Shell]
+    Validator[Static Validator]
+    Three[Local Three Module with CDN fallback]
+    Bridge[postMessage Contract]
   end
 
-  UI --> Panel
-  UI --> Canvas
-  Voice --> Panel
-  Mouse --> Canvas
-  Hand --> Canvas
-  Canvas --> Panel
-
-  Panel --> CompileAPI
-  CompileAPI --> Compiler
-  Compiler --> Exa
-  Compiler --> Gateway
-  Compiler --> Schema
-  Compiler --> Trace
-  Compiler --> S3
-  Schema --> CompileAPI
-  Trace --> Panel
-  S3 --> CompileAPI
-  CompileAPI --> UI
-
-  Panel --> AskAPI
-  Panel --> QuizAPI
-  AskAPI --> Tutor
-  QuizAPI --> Tutor
-  Tutor --> Gateway
-  Tutor --> Canvas
-  Tutor --> Panel
-  Polly -. fallback .-> Panel
+  Chat --> ChatAPI
+  Chat --> Store
+  ChatAPI --> Orchestrator
+  Orchestrator --> CreateTool
+  CreateTool --> Validator
+  Validator --> Template
+  Template --> Chat
+  Chat --> Room
+  Room --> Frame
+  Frame --> Three
+  Frame --> Bridge
+  Bridge --> Room
+  Room --> TutorAPI
+  TutorAPI --> Tutor
+  Tutor --> CommandTool
+  CommandTool --> Bridge
 ```
 
+## Artifact Contract
 
-## Model Provider Configuration
+The model does not generate the whole page. It generates `sceneSource` JavaScript plus metadata. The fixed runtime provides:
 
-The preferred implementation path is to use the Vercel AI SDK with a direct OpenAI provider key:
+- `THREE`, `scene`, `camera`, `renderer`, `root`, and `controls`
+- `registerComponent(id, label, object3D, metadata)`
+- `setWalkthroughSteps(steps)`
+- `setStatus(message)`
+- `fitCameraTo(object3D, position?)`
 
-```bash
-OPENAI_API_KEY=
-```
+The validator rejects network calls, dynamic imports, markup injection, oversized code, scenes without at least three registered components, and scenes without walkthrough steps.
 
-In that setup, Next.js API routes call OpenAI through the AI SDK provider package, and the app does not need `AI_GATEWAY_API_KEY`.
+## Message Contract
 
-Vercel AI Gateway remains an optional routing layer. Use `AI_GATEWAY_API_KEY` only if the project intentionally routes model calls through Vercel AI Gateway for centralized provider credentials, observability, routing, or failover.
+Artifacts post events to the parent:
 
-The current MVP has the `ai` package installed but does not yet make live LLM calls. `/api/ask` and `/api/quiz` are deterministic routes, and `/api/compile` uses Exa plus the cached lesson template.
+- `artifact_ready`
+- `component_selected`
+- `walkthrough_step_changed`
+- `artifact_error`
 
+The parent sends commands back:
 
+- `focus_component`
+- `go_to_step`
+- `start_walkthrough`
+- `pause_walkthrough`
+- `reset_camera`
+- `explode`
+- `collapse`
+- `toggle_labels`
 
-## Lesson Compilation Mode
+## Key Decisions
 
-The Lesson Compiler creates the teaching artifact before the interactive experience starts. For the hackathon MVP, this is a controlled compiler for the `jet_engine` template.
-
-```mermaid
-sequenceDiagram
-  participant User
-  participant UI as Next.js UI
-  participant Compiler as /api/compile
-  participant Exa
-  participant LLM as Vercel AI SDK / Gateway
-  participant Zod as Zod Validator
-  participant Cache as AWS S3 / Local Cache
-
-  User->>UI: I want to learn how a jet engine works
-  UI->>Compiler: POST /api/compile { topic }
-  Compiler-->>UI: trace: Classifying topic
-  Compiler->>Exa: Search jet engine mechanism sources
-  Exa-->>Compiler: Sources + summaries
-  Compiler-->>UI: trace: Extracting mechanism stages
-  Compiler->>LLM: Extract stages, parts, cause/effect links
-  LLM-->>Compiler: Mechanism analysis
-  Compiler-->>UI: trace: Mapping to jet_engine template
-  Compiler->>LLM: Generate lesson JSON constrained to template
-  LLM-->>Compiler: Lesson JSON
-  Compiler->>Zod: Validate components, animations, quiz, re-teach
-
-  alt valid lesson
-    Zod-->>Compiler: valid
-    Compiler->>Cache: Store compiled artifact
-    Compiler-->>UI: lesson + trace
-    UI-->>User: Show lesson plan preview + Start Experience
-  else invalid lesson
-    Zod-->>Compiler: invalid
-    Compiler->>LLM: Retry with validation errors
-    LLM-->>Compiler: Revised lesson JSON
-    Compiler->>Zod: Validate again
-    alt retry valid
-      Zod-->>Compiler: valid
-      Compiler->>Cache: Store compiled artifact
-      Compiler-->>UI: lesson + trace
-    else retry invalid
-      Compiler->>Cache: Load cached hero lesson
-      Cache-->>Compiler: Cached lesson
-      Compiler-->>UI: cached lesson + fallback trace
-    end
-  end
-```
-
-
-
-## Runtime Tutor Mode
-
-Runtime Tutor Mode starts after the user clicks **Start Experience**. At this point, the app already has a validated lesson artifact, so the 3D experience can be smooth and deterministic.
-
-```mermaid
-sequenceDiagram
-  participant User
-  participant UI as Next.js UI
-  participant Canvas as R3F Engine Cutaway
-  participant Tutor as Runtime Tutor Agent
-  participant Ask as /api/ask
-  participant Quiz as /api/quiz
-  participant LLM as Vercel AI SDK / Gateway
-
-  User->>UI: Click Start Experience
-  UI->>Canvas: Load validated lesson artifact
-  Canvas-->>User: Play intake -> compression -> combustion -> turbine -> exhaust
-
-  User->>Canvas: Select compressor
-  Canvas->>UI: selectedComponentId = compressor
-  User->>UI: Ask: Why is this important?
-  UI->>Ask: question + selectedComponentId + currentStepId
-  Ask->>Tutor: Build selected-component context
-  Tutor->>LLM: Generate concise answer + optional renderer command
-  LLM-->>Tutor: Answer + focus command
-  Tutor-->>UI: Answer + command
-  UI->>Canvas: Focus compressor
-  UI-->>User: Tutor answer
-
-  Canvas-->>UI: Quiz checkpoint
-  User->>UI: Wrong answer
-  UI->>Quiz: answer + quiz + lesson context
-  Quiz->>Tutor: Diagnose misconception
-  Tutor->>LLM: Generate re-teach command and narration
-  LLM-->>Tutor: Diagnosis + startReteach command
-  Tutor-->>UI: Re-teach payload
-  UI->>Canvas: Isolate compressor + shaft + turbine
-  Canvas-->>User: Replay turbine drives shaft drives compressor
-```
-
-
-
-## Boundary Between AI And Renderer
-
-The AI never generates arbitrary Three.js code. It only generates validated lesson artifacts and renderer commands.
-
-```mermaid
-flowchart TD
-  A[AI Output] --> B{Zod validation}
-  B -- valid --> C[Lesson Artifact]
-  B -- invalid --> D[Retry / fallback]
-  C --> E[Renderer Command Router]
-  E --> F[Known Components]
-  E --> G[Known Animations]
-  E --> H[Known Camera Presets]
-  E --> I[Known Re-teach Sequences]
-
-  F --> J[React Three Fiber Scene]
-  G --> J
-  H --> J
-  I --> J
-
-  D --> K[Cached Hero Lesson]
-  K --> E
-```
-
-
-
-## Key Architectural Decisions
-
-- **Two agent layers**: Lesson Compiler for 0-to-1 generation, Runtime Tutor for live interaction.
-- **Template-first generation**: the MVP compiles lessons for a fixed `jet_engine` rig instead of generating arbitrary 3D scenes.
-- **Validated lesson artifact**: the compiler outputs JSON, not code.
-- **Deterministic 3D renderer**: React Three Fiber owns geometry, positions, hitboxes, animations, and camera presets.
-- **Visible trace**: compilation logs are shown to judges so the agentic work is inspectable.
-- **Hybrid reliability**: Exa is used live, but cached lesson fallback keeps the demo safe.
-- **Input abstraction**: mouse, touch, and optional MediaPipe all emit the same component-selection events.
+- **Canvas-left learning room**: the artifact is the main stage; chat is contextual support.
+- **Proposal first**: the user sees the generated plan before entering.
+- **One-shot artifacts**: v1 creates the best complete experience in one pass instead of editing artifacts in place.
+- **Sandboxed iframe**: generated code runs in an iframe with a strict `postMessage` bridge.
+- **Fixed runtime, generated scene**: the app owns controls, labels, walkthrough UI, and validation.
+- **OpenAI Agents SDK**: Next.js routes host the Orchestrator and Tutor agents with explicit tools.
+- **Local persistence**: browser storage keeps the chat, generated artifacts, and room state available after refresh.

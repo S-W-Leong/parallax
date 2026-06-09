@@ -90,14 +90,14 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
     }
     #caption {
       min-height: 86px;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 12px 14px;
       pointer-events: auto;
     }
     #caption p { margin: 0; color: var(--muted); line-height: 1.42; }
-    #caption h1 { margin: 0 0 6px; font-size: clamp(18px, 2vw, 25px); letter-spacing: 0; }
+    #caption h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: 0; }
     #controls {
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 8px;
       display: flex;
       flex-wrap: wrap;
@@ -111,7 +111,7 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
       top: 14px;
       left: 14px;
       max-width: min(420px, calc(100vw - 28px));
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 9px 11px;
       color: var(--muted);
       font-size: 13px;

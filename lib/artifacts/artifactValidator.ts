@@ -45,9 +45,8 @@ export function validateSceneSource(source: string): ArtifactValidationResult {
     return { ok: false, error: "Generated scene source contains a forbidden network or dynamic import API." };
   }
 
-  const registeredComponents = source.match(/registerComponent\s*\(/g)?.length ?? 0;
-  if (registeredComponents < 3) {
-    return { ok: false, error: "Generated scene source must call registerComponent at least three times." };
+  if (!/registerComponent\s*\(/.test(source)) {
+    return { ok: false, error: "Generated scene source must call registerComponent." };
   }
 
   if (!/setWalkthroughSteps\s*\(/.test(source)) {
@@ -65,6 +64,16 @@ export function createArtifactRecord(input: CreateExperienceInput): CreateArtifa
 
   const validation = validateSceneSource(parsed.data.sceneSource);
   if (!validation.ok) return validation;
+
+  const missingComponentIds = parsed.data.components
+    .map((component) => component.id)
+    .filter((id) => !parsed.data.sceneSource.includes(id));
+  if (missingComponentIds.length) {
+    return {
+      ok: false,
+      error: `Generated scene source does not reference declared component ids: ${missingComponentIds.join(", ")}`,
+    };
+  }
 
   const id = makeArtifactId(parsed.data.topic);
   const artifact: ArtifactRecord = {

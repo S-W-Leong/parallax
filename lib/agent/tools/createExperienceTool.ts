@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createArtifactRecord, type CreateArtifactRecordResult } from "@/lib/artifacts/artifactValidator";
 import type { CreateExperienceInput } from "@/lib/artifacts/artifactTypes";
 
-const vector3Schema = z.tuple([z.number(), z.number(), z.number()]);
+const vector3Schema = z.array(z.number()).min(3).max(3);
 
 const createExperienceToolInputSchema = z.object({
   topic: z.string().min(1),
@@ -14,7 +14,7 @@ const createExperienceToolInputSchema = z.object({
     id: z.string().min(1),
     label: z.string().min(1),
     description: z.string().nullable(),
-    metadata: z.record(z.string(), z.unknown()).nullable(),
+    metadata: z.string().nullable(),
   })).min(3),
   walkthroughSteps: z.array(z.object({
     id: z.string().min(1),
@@ -29,13 +29,27 @@ const createExperienceToolInputSchema = z.object({
 });
 
 function normalizeToolInput(input: z.infer<typeof createExperienceToolInputSchema>): CreateExperienceInput {
+  function vector(value: number[] | null): [number, number, number] | undefined {
+    return value ? [value[0], value[1], value[2]] : undefined;
+  }
+
+  function metadata(value: string | null): Record<string, unknown> | undefined {
+    if (!value) return undefined;
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : { note: value };
+    } catch {
+      return { note: value };
+    }
+  }
+
   return {
     ...input,
     components: input.components.map((component) => ({
       id: component.id,
       label: component.label,
       description: component.description ?? undefined,
-      metadata: component.metadata ?? undefined,
+      metadata: metadata(component.metadata),
     })),
     walkthroughSteps: input.walkthroughSteps.map((step) => ({
       id: step.id,
@@ -44,8 +58,8 @@ function normalizeToolInput(input: z.infer<typeof createExperienceToolInputSchem
       targetComponentIds: step.targetComponentIds,
       camera: step.camera
         ? {
-            position: step.camera.position ?? undefined,
-            lookAt: step.camera.lookAt ?? undefined,
+            position: vector(step.camera.position),
+            lookAt: vector(step.camera.lookAt),
           }
         : undefined,
     })),

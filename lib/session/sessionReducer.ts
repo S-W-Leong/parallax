@@ -4,7 +4,7 @@ export type SessionAction =
   | { type: "user_message"; content: string }
   | { type: "assistant_message"; content: string; artifactId?: string }
   | { type: "system_event"; content: string; artifactId?: string }
-  | { type: "artifact_created"; artifact: ArtifactRecord; trace: string[] }
+  | { type: "artifact_created"; artifact: ArtifactRecord; trace: string[]; message?: string }
   | { type: "enter_experience"; artifactId: string }
   | { type: "exit_experience" }
   | { type: "component_selected"; component: SelectedComponent }
@@ -65,7 +65,7 @@ export function sessionReducer(state: LearningSession, action: SessionAction): L
           ...state.messages,
           message(
             "assistant",
-            `I built ${action.artifact.title}. Review the proposal, then enter the experience.`,
+            action.message ?? `I built ${action.artifact.title}. Review the proposal, then enter the experience.`,
             action.artifact.id,
           ),
         ],
