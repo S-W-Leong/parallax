@@ -19,10 +19,6 @@ import {
   type ThreadSummaryRecord,
 } from "./threadRecords";
 
-type SendableClient = {
-  send: (command: { input?: unknown }) => Promise<unknown>;
-};
-
 export type CreateThreadInput = {
   userId: string;
   title: string;
@@ -55,8 +51,8 @@ async function bodyToString(body: unknown): Promise<string> {
 export class AwsThreadStore implements ThreadStore {
   constructor(
     private readonly options: {
-      dynamo: SendableClient;
-      s3: SendableClient;
+      dynamo: Pick<DynamoDBDocumentClient, "send">;
+      s3: Pick<S3Client, "send">;
       tableName: string;
       bucketName: string;
     },
