@@ -1,6 +1,7 @@
 import { run, tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 import { artifactSourceSchema, type ArtifactRecord } from "@/lib/artifacts/artifactTypes";
+import { JET_ENGINE_DEMO_ARTIFACT } from "@/lib/demo/jetEngineDemo";
 import type { AgentActivityEmitter } from "../activity";
 import { makeBuilderAgent, makeCriticAgent } from "../agents";
 import { makeArtifactCritiqueToolSink, type ArtifactCritique } from "./artifactCritiqueTool";
@@ -96,6 +97,25 @@ function makeArtifactTrace(plan: LessonPlan): string[] {
     "Generating interactive 3D artifact",
     "Validating artifact contract",
   ];
+}
+
+function isFixedJetEngineScenePlan(plan: LessonPlan): boolean {
+  if (plan.lessonMode !== "guided_walkthrough") return false;
+  if (!plan.mechanismSpec) return false;
+
+  const text = [
+    plan.title,
+    plan.topic,
+    plan.interactionGoal,
+    plan.builderBrief,
+    ...plan.requiredComponents,
+    ...plan.mechanismSpec.components.flatMap((component) => [component.id, component.label, component.role]),
+  ].join(" ").toLowerCase();
+
+  const namesJetEngine = /\b(turbofan|turbojet|jet engine|jet engines)\b/.test(text);
+  const hasCoreStages = ["fan", "compressor", "combustor", "turbine", "nozzle"].every((component) => text.includes(component));
+
+  return namesJetEngine && hasCoreStages;
 }
 
 function emitActivity(options: BuildLearningArtifactOptions | undefined, activity: Parameters<AgentActivityEmitter>[0]) {
@@ -195,6 +215,28 @@ export async function buildLearningArtifactFromPlan(
   requestMessage: string,
   options: BuildLearningArtifactOptions = {},
 ): Promise<BuildLearningArtifactResult> {
+  if (isFixedJetEngineScenePlan(plan)) {
+    const trace = [...makeArtifactTrace(plan), "Using fixed jet engine 3D scene"];
+    emitActivity(options, {
+      type: "phase.started",
+      phase: "artifact.build",
+      label: "Using fixed jet engine 3D scene",
+      detail: plan.title,
+    });
+    emitActivity(options, {
+      type: "phase.completed",
+      phase: "artifact.validate",
+      label: "Fixed jet engine scene selected",
+      ok: true,
+    });
+    return {
+      ok: true,
+      message: `I prepared ${JET_ENGINE_DEMO_ARTIFACT.title}.`,
+      trace,
+      artifact: JET_ENGINE_DEMO_ARTIFACT,
+    };
+  }
+
   const createExperience = makeCreateExperienceToolSink();
   const builderAgent = makeBuilderAgent([createExperience.tool]);
   const trace = makeArtifactTrace(plan);

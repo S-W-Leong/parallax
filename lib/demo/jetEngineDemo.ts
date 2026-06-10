@@ -1,5 +1,5 @@
 import { renderArtifactHtml } from "@/lib/artifacts/artifactTemplate";
-import type { ArtifactCommand, ArtifactRecord } from "@/lib/artifacts/artifactTypes";
+import type { ArtifactRecord } from "@/lib/artifacts/artifactTypes";
 
 export const JET_ENGINE_DEMO_ID = "jet-engine-demo";
 export const JET_ENGINE_DEMO_ARTIFACT_ID = "demo-jet-engine-turbofan";
@@ -7,29 +7,14 @@ export const JET_ENGINE_DEMO_ARTIFACT_ID = "demo-jet-engine-turbofan";
 export type StarterPrompt = {
   id: string;
   label: string;
-  demoId?: typeof JET_ENGINE_DEMO_ID;
-};
-
-export type DemoTutorTurn = {
-  content: string;
-  commands: ArtifactCommand[];
 };
 
 export const STARTER_PROMPTS: StarterPrompt[] = [
-  { id: "jet-engine-demo", label: "Tour a jet engine", demoId: JET_ENGINE_DEMO_ID },
+  { id: JET_ENGINE_DEMO_ID, label: "Tour a jet engine" },
   { id: "fusion-reactor", label: "Explain a fusion reactor" },
   { id: "neuron-synapse", label: "Build a neuron synapse" },
   { id: "orbital-resonance", label: "Show orbital resonance" },
 ];
-
-export const JET_ENGINE_DEMO_TRACE = [
-  "Guide selected the built-in jet engine demo.",
-  "Builder produced a sealed guided walkthrough artifact.",
-  "Guide is ready to focus parts, start the walkthrough, or reset the camera.",
-];
-
-export const JET_ENGINE_DEMO_PROPOSAL_MESSAGE =
-  "I can load a guided 3D tour of a turbofan jet engine and walk you from inlet airflow to exhaust thrust.";
 
 const components = [
   { id: "fan", label: "Fan", description: "Draws incoming air into the engine." },
@@ -373,51 +358,6 @@ export const JET_ENGINE_DEMO_ARTIFACT: ArtifactRecord = {
   createdAt: "2026-06-10T00:00:00.000Z",
 };
 
-export function isJetEngineDemoStarterPrompt(prompt: StarterPrompt): boolean {
-  return prompt.demoId === JET_ENGINE_DEMO_ID;
-}
-
 export function isJetEngineDemoArtifact(artifact: ArtifactRecord | null): boolean {
   return artifact?.id === JET_ENGINE_DEMO_ARTIFACT_ID;
-}
-
-export function getJetEngineDemoTutorTurn(message: string): DemoTutorTurn {
-  const normalized = message.toLowerCase();
-
-  if (normalized.includes("combustor")) {
-    return {
-      content: "Here is the combustor, where compressed air mixes with fuel and releases heat before the turbine.",
-      commands: [
-        { type: "focus_component", componentId: "combustor" },
-        { type: "go_to_step", stepId: "combustor" },
-      ],
-    };
-  }
-
-  if (normalized.includes("explode")) {
-    return {
-      content: "Exploding the view separates the engine sections so the flow path and shaft relationship are easier to see.",
-      commands: [{ type: "explode" }],
-    };
-  }
-
-  if (normalized.includes("reset") && normalized.includes("camera")) {
-    return {
-      content: "Resetting the camera to the full-engine view.",
-      commands: [{ type: "reset_camera" }],
-    };
-  }
-
-  if (normalized.includes("walkthrough")) {
-    return {
-      content: "Starting the guided walkthrough from the overview.",
-      commands: [{ type: "start_walkthrough" }],
-    };
-  }
-
-  return {
-    content:
-      "Air enters through the fan, gets squeezed in the compressor, heats rapidly in the combustor, spins the turbine, and exits through the nozzle as thrust.",
-    commands: [],
-  };
 }

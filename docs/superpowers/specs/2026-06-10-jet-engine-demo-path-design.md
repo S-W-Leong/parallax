@@ -8,29 +8,28 @@ Only the first starter prompt should trigger this deterministic demo path. All o
 
 ## Design Direction
 
-Use a client-side deterministic demo path:
+Use a real-agent demo path with one deterministic artifact-scene substitution:
 
 - The first empty-chat starter prompt becomes a jet engine demo prompt.
-- Clicking that starter prompt creates a local prebuilt jet-engine `ArtifactRecord`.
-- The app adds a normal user message and assistant proposal message to the active thread session.
+- Clicking that starter prompt sends the prompt through the normal `/api/agent` Guide route.
+- The Guide plans the lesson and calls `build_learning_artifact` as it would for any other interactive tour.
+- When that tool receives a guided jet-engine plan with the expected major engine stages, it returns the prebuilt jet-engine `ArtifactRecord` instead of asking Builder/Critic to generate a new Three.js scene.
 - The proposal card remains the transition point into the learning room.
 - The presenter clicks "Start learning" to enter the room.
 - The iframe renders the prebuilt artifact through the same `renderArtifactHtml` runtime used by generated artifacts.
-- Learning-room messages for this demo artifact use local canned tutor responses and artifact commands.
-- Any non-demo prompt continues to stream through the real agent route.
+- Learning-room messages for this artifact use the normal `/api/agent` Guide route with active artifact context and real `send_artifact_command` tool calls.
+- Any non-jet-engine prompt continues to use the normal artifact Builder/Critic workflow.
 
-This keeps the demo path narrow, dependable, and easy to remove or replace after the live demo.
+This keeps the only fake boundary at the 3D scene itself, while preserving the real Guide Agent, streaming, command, persistence, and room-chat behavior.
 
 ## Trigger Contract
 
 The demo should be triggered by starter-prompt identity, not by fuzzy matching arbitrary user text in the composer. This avoids surprising users who type their own jet-engine prompt and expect the real workflow.
 
-Implementation should use prompt metadata rather than comparing visible text wherever possible:
+Implementation should not use prompt metadata to bypass the agent:
 
-- `ChatHome` exposes starter prompts as objects with labels and an optional demo id.
-- The first starter prompt has the jet-engine demo id.
-- The other three starter prompts have no demo id.
-- Clicking a non-demo starter prompt calls the existing chat send handler.
+- `ChatHome` exposes starter prompts as simple objects with labels.
+- Clicking any starter prompt calls the existing chat send handler.
 - Submitting text in `ChatComposer` always calls the existing chat send handler.
 
 The visible first prompt can be concise, such as "Tour a jet engine".
@@ -85,34 +84,13 @@ Learning outcomes should be friendly and proposal-ready, for example:
 
 ## Demo Tutor
 
-If the active artifact is the demo jet-engine artifact, learning-room chat should bypass `/api/agent` and use a local deterministic tutor helper. This prevents the live fallback from depending on OpenAI availability after the room opens.
+The demo tutor should be the normal Guide Agent. Learning-room chat sends the fixed artifact context, selected component, active step, and message history through `/api/agent`. The Guide can answer naturally and use `send_artifact_command` for component focus, walkthrough movement, exploded view, labels, and camera reset.
 
-The helper should return:
-
-- assistant text
-- zero or more artifact commands
-
-Keyword-based responses are enough for the demo:
-
-- "fan" or "inlet" focuses the fan component.
-- "compressor" focuses the compressor component.
-- "combustor", "burn", or "fuel" focuses the combustor component.
-- "turbine" focuses the turbine component.
-- "nozzle", "exhaust", or "thrust" focuses the nozzle component.
-- "airflow", "walkthrough", or "steps" sends `start_walkthrough`.
-- "explode" sends the `explode` command.
-- "collapse" sends the `collapse` command.
-- "reset" sends the `reset_camera` command.
-
-The fallback response should summarize the full engine cycle and suggest a useful next component to inspect. It should stay concise so the room still feels like a tutor channel, not a static article.
+There should be no local canned tutor helper for this path.
 
 ## State And Persistence
 
-The demo path should use existing session reducer actions rather than adding a parallel state model. The starter click should dispatch `user_message` followed by `artifact_created` with the demo proposal text. Canned tutor messages should dispatch `user_message`, `assistant_message`, and `enqueue_commands` as needed.
-
-The initial demo implementation should not persist the demo artifact through the backend. Keeping it local avoids touching the existing dirty agent/storage files and makes the fallback independent of backend availability. Thread refresh may not show the demo messages after a full reload; that is acceptable for this live-demo fallback.
-
-If persistence becomes necessary later, it should be added as a separate server-side demo route or an explicit save path.
+The demo path should use the existing agent route, stream handling, reducer actions, and persistence. When `build_learning_artifact` returns the fixed jet-engine artifact, the route saves it like any other generated artifact and the proposal card attaches to the assistant message normally.
 
 ## Error Handling
 
@@ -126,11 +104,11 @@ The real workflow should retain its current loading, stop, streaming, and error 
 
 Add focused tests for the demo contract:
 
-- The first starter prompt is the jet-engine demo prompt.
-- Only that starter prompt carries the demo id.
+- The first starter prompt is the jet-engine prompt and carries no local bypass metadata.
 - The demo artifact validates through the existing artifact validator.
 - The demo artifact HTML is rendered through `renderArtifactHtml`.
-- The demo tutor helper maps component keywords to expected assistant text and commands.
+- The app exports no local tutor routing helper.
+- `build_learning_artifact` returns the fixed jet-engine scene for guided jet-engine plans without running Builder/Critic.
 - Non-demo prompts remain plain prompts with no demo id.
 
 Existing verification still applies before claiming completion:
@@ -152,6 +130,6 @@ Existing verification still applies before claiming completion:
 - A fresh empty chat shows the jet-engine demo as the first starter option.
 - Clicking the jet-engine starter option shows the normal proposal card first.
 - Clicking "Start learning" enters a functioning jet-engine learning room.
-- The artifact renders without contacting OpenAI or external asset services.
-- Canned tutor questions can focus major engine components and trigger useful room commands.
+- The 3D artifact scene renders without external asset services.
+- Tutor questions go through the real Guide Agent and can focus major engine components or trigger useful room commands.
 - The other three starter prompts and all composer submissions continue through the actual agent workflow.

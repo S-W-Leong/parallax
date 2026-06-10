@@ -14,7 +14,7 @@ describe("jet engine demo", () => {
       id: "jet-engine-demo",
       label: "Tour a jet engine",
     });
-    expect(STARTER_PROMPTS.slice(1).map((prompt) => prompt.demoId)).toEqual([undefined, undefined, undefined]);
+    expect(STARTER_PROMPTS.some((prompt) => "demoId" in prompt)).toBe(false);
   });
 
   it("ships a valid guided walkthrough artifact", () => {

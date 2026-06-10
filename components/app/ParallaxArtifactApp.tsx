@@ -9,15 +9,7 @@ import { ParallaxLogo } from "@/components/brand/ParallaxLogo";
 import { ChatHome } from "@/components/app/ChatHome";
 import { ThreadSidebar } from "@/components/chat/ThreadSidebar";
 import { LearningRoom } from "@/components/experience/LearningRoom";
-import {
-  JET_ENGINE_DEMO_ARTIFACT,
-  JET_ENGINE_DEMO_PROPOSAL_MESSAGE,
-  JET_ENGINE_DEMO_TRACE,
-  getJetEngineDemoTutorTurn,
-  isJetEngineDemoArtifact,
-  isJetEngineDemoStarterPrompt,
-  type StarterPrompt,
-} from "@/lib/demo/jetEngineDemo";
+import type { StarterPrompt } from "@/lib/demo/jetEngineDemo";
 import type { SessionAction } from "@/lib/session/sessionReducer";
 import { useThreadSession } from "@/lib/session/useThreadSession";
 
@@ -37,10 +29,6 @@ type AppShellClassOptions = {
 
 export function getAppShellClassName({ sidebarExpanded, learning }: AppShellClassOptions): string {
   return ["app-shell", sidebarExpanded ? "sidebar-pinned" : "", learning ? "is-learning" : ""].filter(Boolean).join(" ");
-}
-
-export function shouldUseLocalDemoTutor(artifact: ArtifactRecord | null): artifact is ArtifactRecord {
-  return isJetEngineDemoArtifact(artifact);
 }
 
 function makeClientId(prefix: string): string {
@@ -256,17 +244,6 @@ export function ParallaxArtifactApp() {
   function sendStarterPrompt(prompt: StarterPrompt) {
     if (!activeThreadId) return;
 
-    if (isJetEngineDemoStarterPrompt(prompt)) {
-      dispatchToThread(activeThreadId, { type: "user_message", content: prompt.label });
-      dispatchToThread(activeThreadId, {
-        type: "artifact_created",
-        artifact: JET_ENGINE_DEMO_ARTIFACT,
-        trace: JET_ENGINE_DEMO_TRACE,
-        message: JET_ENGINE_DEMO_PROPOSAL_MESSAGE,
-      });
-      return;
-    }
-
     void sendGuideMessage(prompt.label);
   }
 
@@ -274,20 +251,6 @@ export function ParallaxArtifactApp() {
     if (!activeThreadId) return;
     const threadId = activeThreadId;
     const activeSession = getThreadSession(threadId) ?? state;
-
-    if (activeSession.mode === "learning_room" && shouldUseLocalDemoTutor(activeArtifact)) {
-      const tutorTurn = getJetEngineDemoTutorTurn(message);
-      dispatchToThread(threadId, { type: "user_message", content: message });
-      dispatchToThread(threadId, {
-        type: "assistant_message",
-        content: tutorTurn.content,
-        artifactId: activeArtifact.id,
-      });
-      if (tutorTurn.commands.length) {
-        dispatchToThread(threadId, { type: "enqueue_commands", commands: tutorTurn.commands });
-      }
-      return;
-    }
 
     if (activeSession.mode === "learning_room" && activeArtifact) {
       await streamAgentMessage({

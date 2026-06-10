@@ -1,5 +1,7 @@
 # Jet Engine Demo Path Implementation Plan
 
+> Superseded boundary note, 2026-06-10: The current implementation no longer uses a client-side demo artifact injection or local canned tutor. The jet-engine starter prompt routes through the real `/api/agent` Guide. Only the 3D scene is deterministic: `build_learning_artifact` substitutes the fixed jet-engine artifact for guided jet-engine plans, and learning-room chat remains wired to the real Guide plus `send_artifact_command`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a deterministic jet-engine live-demo path as the first empty-chat starter prompt while preserving the real Guide Agent workflow for every other prompt.
