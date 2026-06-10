@@ -48,6 +48,7 @@ export const chatMessageSchema = z.object({
   content: z.string(),
   createdAt: z.string().min(1),
   artifactId: z.string().optional(),
+  status: z.enum(["streaming", "complete", "stopped"]).optional(),
 });
 
 export const focusComponentCommandSchema = z.object({

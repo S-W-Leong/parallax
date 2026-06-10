@@ -71,6 +71,67 @@ describe("session reducer", () => {
     });
   });
 
+  it("updates an assistant draft while streaming", () => {
+    const started = sessionReducer(createEmptySession(), {
+      type: "assistant_draft_started",
+      id: "draft-1",
+      content: "Let me think this through...",
+      artifactId: undefined,
+    });
+    const replaced = sessionReducer(started, { type: "assistant_draft_replaced", id: "draft-1", content: "Cells " });
+    const appended = sessionReducer(replaced, { type: "assistant_draft_delta", id: "draft-1", delta: "store energy." });
+    const completed = sessionReducer(appended, { type: "assistant_draft_completed", id: "draft-1", content: "Cells store energy." });
+
+    expect(completed.messages).toHaveLength(1);
+    expect(completed.messages[0]).toMatchObject({
+      id: "draft-1",
+      role: "assistant",
+      content: "Cells store energy.",
+      status: "complete",
+    });
+  });
+
+  it("keeps partial assistant text when streaming is stopped", () => {
+    const started = sessionReducer(createEmptySession(), {
+      type: "assistant_draft_started",
+      id: "draft-1",
+      content: "The nucleus",
+      artifactId: undefined,
+    });
+    const stopped = sessionReducer(started, { type: "assistant_draft_stopped", id: "draft-1" });
+
+    expect(stopped.messages[0]).toMatchObject({
+      content: "The nucleus",
+      status: "stopped",
+    });
+  });
+
+  it("attaches a created artifact to an existing assistant draft", () => {
+    const started = sessionReducer(createEmptySession(), {
+      type: "assistant_draft_started",
+      id: "draft-1",
+      content: "I'm sketching the room...",
+      artifactId: undefined,
+    });
+    const attached = sessionReducer(started, {
+      type: "artifact_attached_to_message",
+      id: "draft-1",
+      artifact,
+      trace: ["Validated artifact"],
+      content: "I built a cell room.",
+    });
+
+    expect(attached.lastArtifactId).toBe(artifact.id);
+    expect(attached.artifacts[artifact.id]).toEqual(artifact);
+    expect(attached.trace).toEqual(["Validated artifact"]);
+    expect(attached.messages[0]).toMatchObject({
+      id: "draft-1",
+      content: "I built a cell room.",
+      artifactId: artifact.id,
+      status: "complete",
+    });
+  });
+
   it("returns to chat while retaining a collapsed artifact preview", () => {
     const inRoom = sessionReducer(
       sessionReducer(createEmptySession(), { type: "artifact_created", artifact, trace: [] }),

@@ -4,8 +4,14 @@ export type SessionAction =
   | { type: "session_loaded"; session: LearningSession }
   | { type: "user_message"; content: string }
   | { type: "assistant_message"; content: string; artifactId?: string }
+  | { type: "assistant_draft_started"; id: string; content: string; artifactId?: string }
+  | { type: "assistant_draft_replaced"; id: string; content: string }
+  | { type: "assistant_draft_delta"; id: string; delta: string }
+  | { type: "assistant_draft_completed"; id: string; content: string; artifactId?: string }
+  | { type: "assistant_draft_stopped"; id: string }
   | { type: "system_event"; content: string; artifactId?: string }
   | { type: "artifact_created"; artifact: ArtifactRecord; trace: string[]; message?: string }
+  | { type: "artifact_attached_to_message"; id: string; artifact: ArtifactRecord; trace: string[]; content: string }
   | { type: "enter_experience"; artifactId: string }
   | { type: "exit_experience" }
   | { type: "component_selected"; component: SelectedComponent }
@@ -25,12 +31,32 @@ function now(): string {
 }
 
 function message(role: ChatMessage["role"], content: string, artifactId?: string): ChatMessage {
-  return {
+  const chatMessage: ChatMessage = {
     id: makeId("message"),
     role,
     content,
     createdAt: now(),
-    artifactId,
+  };
+  if (artifactId) chatMessage.artifactId = artifactId;
+  return chatMessage;
+}
+
+function draftMessage(id: string, content: string, artifactId?: string): ChatMessage {
+  const chatMessage: ChatMessage = {
+    id,
+    role: "assistant",
+    content,
+    createdAt: now(),
+    status: "streaming",
+  };
+  if (artifactId) chatMessage.artifactId = artifactId;
+  return chatMessage;
+}
+
+function updateMessage(state: LearningSession, id: string, update: (message: ChatMessage) => ChatMessage): LearningSession {
+  return {
+    ...state,
+    messages: state.messages.map((existing) => (existing.id === id ? update(existing) : existing)),
   };
 }
 
@@ -59,6 +85,19 @@ export function sessionReducer(state: LearningSession, action: SessionAction): L
       return { ...state, messages: [...state.messages, message("user", action.content, state.activeArtifactId ?? undefined)] };
     case "assistant_message":
       return { ...state, messages: [...state.messages, message("assistant", action.content, action.artifactId)] };
+    case "assistant_draft_started":
+      return { ...state, messages: [...state.messages, draftMessage(action.id, action.content, action.artifactId)] };
+    case "assistant_draft_replaced":
+      return updateMessage(state, action.id, (existing) => ({ ...existing, content: action.content, status: "streaming" }));
+    case "assistant_draft_delta":
+      return updateMessage(state, action.id, (existing) => ({ ...existing, content: `${existing.content}${action.delta}`, status: "streaming" }));
+    case "assistant_draft_completed":
+      return updateMessage(state, action.id, (existing) => ({
+        ...existing,
+        content: action.content,
+        artifactId: action.artifactId ?? existing.artifactId,
+        status: "complete",
+      }));
     case "system_event":
       return { ...state, messages: [...state.messages, message("system", action.content, action.artifactId)] };
     case "artifact_created":
@@ -75,6 +114,20 @@ export function sessionReducer(state: LearningSession, action: SessionAction): L
             action.artifact.id,
           ),
         ],
+      };
+    case "assistant_draft_stopped":
+      return updateMessage(state, action.id, (existing) => ({ ...existing, status: "stopped" }));
+    case "artifact_attached_to_message":
+      return {
+        ...state,
+        artifacts: { ...state.artifacts, [action.artifact.id]: action.artifact },
+        lastArtifactId: action.artifact.id,
+        trace: action.trace,
+        messages: state.messages.map((existing) =>
+          existing.id === action.id
+            ? { ...existing, content: action.content, artifactId: action.artifact.id, status: "complete" }
+            : existing,
+        ),
       };
     case "enter_experience": {
       const artifact = state.artifacts[action.artifactId];
