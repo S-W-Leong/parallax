@@ -5,6 +5,8 @@ describe("agent stream protocol", () => {
   it("round trips status, delta, and done events", () => {
     const text = [
       encodeAgentStreamEvent({ type: "status", message: "Let me think this through..." }),
+      encodeAgentStreamEvent({ type: "trace", entry: { kind: "reasoning", label: "Reasoning through next step" } }),
+      encodeAgentStreamEvent({ type: "trace", entry: { kind: "tool", label: "Calling create_experience", detail: "Executing tool" } }),
       encodeAgentStreamEvent({ type: "delta", delta: "Cells " }),
       encodeAgentStreamEvent({ type: "delta", delta: "store energy." }),
       encodeAgentStreamEvent({ type: "done", message: "Cells store energy.", trace: [], artifact: null, commands: [], error: null }),
@@ -12,6 +14,8 @@ describe("agent stream protocol", () => {
 
     expect(decodeAgentStreamEvents(text)).toEqual([
       { type: "status", message: "Let me think this through..." },
+      { type: "trace", entry: { kind: "reasoning", label: "Reasoning through next step" } },
+      { type: "trace", entry: { kind: "tool", label: "Calling create_experience", detail: "Executing tool" } },
       { type: "delta", delta: "Cells " },
       { type: "delta", delta: "store energy." },
       { type: "done", message: "Cells store energy.", trace: [], artifact: null, commands: [], error: null },

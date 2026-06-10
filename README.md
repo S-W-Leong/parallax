@@ -12,6 +12,7 @@ The core bet: an agent should be able to author a complete interactive 3D learni
 - Presents validated artifacts as proposal cards with learning outcomes, walkthrough steps, and interactive components.
 - Opens a learning room with the artifact iframe on the left and a Tutor chat on the right.
 - Lets the Tutor send typed commands to the artifact: focus a component, go to a step, start or pause walkthroughs, explode or collapse the model, reset the camera, and toggle labels.
+- Streams safe agent progress during completions, including reasoning milestones and tool execution, without exposing hidden chain-of-thought or large generated source arguments.
 - Persists chat threads, messages, artifact metadata, generated HTML, and generated scene source with DynamoDB and S3.
 - Lets users inspect and download generated artifact HTML.
 
@@ -25,7 +26,7 @@ The core bet: an agent should be able to author a complete interactive 3D learni
 6. Parallax validates the scene source, wraps it in the fixed artifact runtime, uploads the artifact payload to S3, and stores metadata/messages in DynamoDB.
 7. The user enters the learning room.
 8. The artifact emits typed events such as component selection and walkthrough step changes.
-9. Learning-room chat calls `/api/agent` in `learning_room` mode. The Tutor receives artifact context and can return both text and artifact commands.
+9. Learning-room chat calls `/api/agent` in `learning_room` mode. The Tutor receives artifact context and can return text, artifact commands, or a complete replacement artifact when the learner asks to rebuild or patch the scene.
 
 ## Architecture
 
@@ -33,7 +34,7 @@ Parallax has three main layers:
 
 - **Browser UI:** `components/app/ParallaxArtifactApp.tsx` owns the app shell, thread sidebar, chat console, proposal cards, and learning-room mode. Session state flows through `lib/session/sessionReducer.ts` and `useThreadSession`.
 - **Next.js API routes:** `app/api/agent/route.ts`, `app/api/threads/route.ts`, and `app/api/threads/[threadId]/route.ts` are thin route handlers. Most agent logic lives in `lib/agent/routes.ts`; thread persistence lives in `lib/cloud/threadStore.ts`.
-- **OpenAI Agents SDK:** `lib/agent/agents.ts` builds the Parallax Agent. In chat mode it can research and create experiences. In learning-room mode it can send artifact commands through a sink-backed tool.
+- **OpenAI Agents SDK:** `lib/agent/agents.ts` builds the Parallax Agent. In chat mode it can research and create experiences. In learning-room mode it can send artifact commands through a sink-backed tool or create a full replacement artifact for rebuild/patch requests.
 
 The artifact system is its own trust boundary:
 

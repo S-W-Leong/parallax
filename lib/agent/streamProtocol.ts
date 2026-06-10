@@ -1,7 +1,8 @@
-import type { ArtifactCommand, ArtifactRecord } from "@/lib/artifacts/artifactTypes";
+import type { AgentTraceEntry, ArtifactCommand, ArtifactRecord } from "@/lib/artifacts/artifactTypes";
 
 export type AgentStreamEvent =
   | { type: "status"; message: string }
+  | { type: "trace"; entry: AgentTraceEntry }
   | { type: "delta"; delta: string }
   | { type: "done"; message: string; trace: string[]; artifact: ArtifactRecord | null; commands: ArtifactCommand[]; error: string | null }
   | { type: "error"; message: string };

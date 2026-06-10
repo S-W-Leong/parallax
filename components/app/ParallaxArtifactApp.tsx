@@ -77,6 +77,11 @@ export function ParallaxArtifactApp() {
       return;
     }
 
+    if (event.type === "trace") {
+      dispatch({ type: "assistant_trace_event", id: draftId, entry: event.entry });
+      return;
+    }
+
     if (event.type === "error") {
       streamState.errorShown = true;
       dispatch({ type: "system_event", content: event.message, artifactId });
@@ -194,7 +199,15 @@ export function ParallaxArtifactApp() {
       message,
       mode: "chat",
       initialDraft: "Let me think this through...",
-      body: { threadId: activeThreadId, userId, message, messages: state.messages },
+      body: {
+        threadId: activeThreadId,
+        userId,
+        message,
+        messages: state.messages,
+        artifacts: state.artifacts,
+        activeArtifactId: state.activeArtifactId,
+        lastArtifactId: state.lastArtifactId,
+      },
     });
   }
 

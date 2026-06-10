@@ -50,6 +50,7 @@ flowchart TD
   AA --> AC["POST /api/agent mode: learning_room with artifact context"]
   AC --> O
   O -- command useful --> AD["send_artifact_command tool"]
+  O -- rebuild requested --> R
   AD --> Z
   AC --> AE["Persist room user + assistant messages in DynamoDB"]
   AE --> AA
@@ -137,8 +138,9 @@ flowchart LR
 
 1. Browser posts to `POST /api/agent` with `mode: "learning_room"`, active artifact context, `userId`, and `threadId`.
 2. Vercel function runs the Parallax Agent with room-control tools.
-3. Assistant text and any artifact commands return to the browser.
-4. User and assistant learning-room messages are persisted to DynamoDB with the active `artifactId`.
+3. Assistant text, safe progress trace events, and any artifact commands return to the browser over the same SSE stream. Trace events summarize agent updates, reasoning-item milestones, and tool execution without exposing hidden chain-of-thought or large tool arguments.
+4. If the learner asks to rebuild or patch the scene, the agent creates a complete replacement artifact with `create_experience`; the browser switches the active room to that new artifact.
+5. User and assistant learning-room messages are persisted to DynamoDB with the relevant `artifactId`.
 
 ### Thread Switching
 
@@ -152,6 +154,8 @@ flowchart LR
 ## Agent API Contract
 
 The app has one agent endpoint: `POST /api/agent`.
+
+When `stream: true` or `Accept: text/event-stream` is used, the endpoint emits `status`, `trace`, `delta`, `error`, and `done` SSE events. `trace` events are UI-safe progress entries for agent/tool activity; final user-facing text still arrives through `delta` and `done`.
 
 Main chat sends:
 
@@ -176,7 +180,7 @@ Learning room chat sends:
 }
 ```
 
-The route gives the same Parallax Agent different tools based on mode. Main chat gets `research_stem_topic` and `create_experience`. Learning room chat gets `send_artifact_command` plus active artifact context.
+The route gives the same Parallax Agent different tools based on mode. Main chat gets `research_stem_topic` and `create_experience`, plus latest artifact context for rebuild follow-ups. Learning room chat gets `send_artifact_command` and `create_experience` with active artifact context including `sceneSource`. Rebuild and patch requests create complete replacement artifacts; there is still no in-place scene editing.
 
 ## Artifact Contract
 
@@ -373,7 +377,7 @@ aws s3api put-public-access-block \
 
 - **Canvas-left learning room**: the artifact is the main stage; chat is contextual support.
 - **Proposal first**: the user sees the generated plan before entering.
-- **One-shot artifacts**: v1 creates the best complete experience in one pass instead of editing artifacts in place.
+- **One-shot artifacts**: v1 creates the best complete experience in one pass. Rebuild and patch requests create a new complete replacement artifact instead of editing an artifact in place.
 - **Sandboxed iframe**: generated code runs in an iframe with a strict `postMessage` bridge.
 - **Fixed runtime, generated scene**: the app owns controls, labels, walkthrough UI, and validation.
 - **Single Parallax Agent**: one Agents SDK agent handles chat, artifact creation, and room control with mode-specific tools.

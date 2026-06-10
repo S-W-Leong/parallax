@@ -1,4 +1,4 @@
-import type { ArtifactCommand, ArtifactRecord, ChatMessage, LearningSession, SelectedComponent } from "@/lib/artifacts/artifactTypes";
+import type { AgentTraceEntry, ArtifactCommand, ArtifactRecord, ChatMessage, LearningSession, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 
 export type SessionAction =
   | { type: "session_loaded"; session: LearningSession }
@@ -7,6 +7,7 @@ export type SessionAction =
   | { type: "assistant_draft_started"; id: string; content: string; artifactId?: string }
   | { type: "assistant_draft_replaced"; id: string; content: string }
   | { type: "assistant_draft_delta"; id: string; delta: string }
+  | { type: "assistant_trace_event"; id: string; entry: AgentTraceEntry }
   | { type: "assistant_draft_completed"; id: string; content: string; artifactId?: string }
   | { type: "assistant_draft_stopped"; id: string }
   | { type: "system_event"; content: string; artifactId?: string }
@@ -91,6 +92,12 @@ export function sessionReducer(state: LearningSession, action: SessionAction): L
       return updateMessage(state, action.id, (existing) => ({ ...existing, content: action.content, status: "streaming" }));
     case "assistant_draft_delta":
       return updateMessage(state, action.id, (existing) => ({ ...existing, content: `${existing.content}${action.delta}`, status: "streaming" }));
+    case "assistant_trace_event":
+      return updateMessage(state, action.id, (existing) => ({
+        ...existing,
+        agentTrace: [...(existing.agentTrace ?? []), action.entry],
+        status: "streaming",
+      }));
     case "assistant_draft_completed":
       return updateMessage(state, action.id, (existing) => ({
         ...existing,
@@ -121,7 +128,11 @@ export function sessionReducer(state: LearningSession, action: SessionAction): L
       return {
         ...state,
         artifacts: { ...state.artifacts, [action.artifact.id]: action.artifact },
+        activeArtifactId: state.mode === "learning_room" && state.activeArtifactId ? action.artifact.id : state.activeArtifactId,
         lastArtifactId: action.artifact.id,
+        selectedComponent: state.mode === "learning_room" && state.activeArtifactId ? null : state.selectedComponent,
+        activeStepId: state.mode === "learning_room" && state.activeArtifactId ? action.artifact.walkthroughSteps[0]?.id ?? null : state.activeStepId,
+        pendingCommands: state.mode === "learning_room" && state.activeArtifactId ? [] : state.pendingCommands,
         trace: action.trace,
         messages: state.messages.map((existing) =>
           existing.id === action.id

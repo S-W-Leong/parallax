@@ -4,6 +4,7 @@ import {
   artifactRecordSchema,
   chatMessageSchema,
   selectedComponentSchema,
+  type AgentTraceEntry,
   type ArtifactCommand,
   type ArtifactRecord,
   type ChatMessage,
@@ -24,6 +25,9 @@ const chatAgentRequestSchema = z.object({
   mode: z.literal("chat"),
   message: z.string().min(1),
   messages: z.array(chatMessageSchema).default([]),
+  artifacts: z.record(z.string(), artifactRecordSchema).default({}),
+  activeArtifactId: z.string().nullable().optional(),
+  lastArtifactId: z.string().nullable().optional(),
 }).merge(persistedThreadContextSchema);
 
 const learningRoomAgentRequestSchema = z.object({
@@ -85,6 +89,39 @@ function recentConversation(messages: ChatMessage[]): string {
     .join("\n");
 }
 
+function promptArtifactPayload(artifact: ArtifactRecord) {
+  return {
+    id: artifact.id,
+    title: artifact.title,
+    topic: artifact.topic,
+    summary: artifact.summary,
+    components: artifact.components,
+    walkthroughSteps: artifact.walkthroughSteps,
+    sceneSource: artifact.sceneSource,
+  };
+}
+
+function latestArtifactForChat(request: z.infer<typeof chatAgentRequestSchema>): ArtifactRecord | null {
+  const candidates = [
+    request.activeArtifactId,
+    request.lastArtifactId,
+    ...request.messages.slice().reverse().map((message) => message.artifactId),
+  ];
+
+  for (const id of candidates) {
+    if (id && request.artifacts[id]) return request.artifacts[id];
+  }
+
+  return null;
+}
+
+function latestArtifactContextForChat(request: z.infer<typeof chatAgentRequestSchema>): string {
+  const artifact = latestArtifactForChat(request);
+  if (!artifact) return "";
+
+  return `Latest artifact context for rebuild/patch follow-ups:\n${JSON.stringify(promptArtifactPayload(artifact), null, 2)}`;
+}
+
 function makeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown agent error";
 }
@@ -130,8 +167,9 @@ function prepareChatMode(request: z.infer<typeof chatAgentRequestSchema>) {
   const researchStemTopic = makeResearchStemTopicTool();
   const agent = makeParallaxAgent([researchStemTopic, createExperience.tool]);
   const history = recentConversation(request.messages);
+  const artifactContext = latestArtifactContextForChat(request);
   const prompt = `Mode: main chat
-${history ? `Conversation so far:\n${history}\n\n` : ""}User request:\n${request.message}`;
+${history ? `Conversation so far:\n${history}\n\n` : ""}${artifactContext ? `${artifactContext}\n\n` : ""}User request:\n${request.message}`;
 
   return { userMessage, createExperience, agent, prompt };
 }
@@ -189,24 +227,19 @@ async function handleChatMode(request: z.infer<typeof chatAgentRequestSchema>) {
 function prepareLearningRoomMode(request: z.infer<typeof learningRoomAgentRequestSchema>) {
   const userMessage = makeMessage("user", request.message, request.artifact.id);
   const commandSink = makeSendArtifactCommandSink();
-  const agent = makeParallaxAgent([commandSink.tool]);
+  const createExperience = makeCreateExperienceToolSink();
+  const agent = makeParallaxAgent([commandSink.tool, createExperience.tool]);
   const activeStep = request.artifact.walkthroughSteps.find((step) => step.id === request.activeStepId) ?? null;
   const context = {
     mode: "learning_room",
-    artifact: {
-      title: request.artifact.title,
-      topic: request.artifact.topic,
-      summary: request.artifact.summary,
-      walkthroughSteps: request.artifact.walkthroughSteps,
-      components: request.artifact.components,
-    },
+    artifact: promptArtifactPayload(request.artifact),
     selectedComponent: request.selectedComponent,
     activeStep,
     conversation: recentConversation(request.messages),
   };
   const prompt = `Context:\n${JSON.stringify(context)}\n\nUser question:\n${request.message}`;
 
-  return { userMessage, commandSink, agent, prompt };
+  return { userMessage, commandSink, createExperience, agent, prompt };
 }
 
 async function finishLearningRoomMode(
@@ -214,7 +247,37 @@ async function finishLearningRoomMode(
   userMessage: ChatMessage,
   result: { finalOutput?: unknown },
   commandSink: ReturnType<typeof makeSendArtifactCommandSink>,
+  createExperience: ReturnType<typeof makeCreateExperienceToolSink>,
 ) {
+  const artifactResult = createExperience.getResult();
+  if (artifactResult) {
+    const trace = ["Planning replacement scene", "Generating replacement 3D artifact", "Validating artifact contract"];
+
+    if (!artifactResult.ok) {
+      return {
+        message: artifactResult.error,
+        trace,
+        artifact: null,
+        commands: [],
+        error: artifactResult.error,
+      };
+    }
+
+    const message = finalOutputText(result.finalOutput, `I rebuilt ${artifactResult.artifact.title}.`);
+    await persistIfThreaded(request.userId, request.threadId, [
+      userMessage,
+      makeMessage("assistant", message, artifactResult.artifact.id),
+    ], artifactResult.artifact);
+
+    return {
+      message,
+      trace,
+      artifact: artifactResult.artifact,
+      commands: [],
+      error: null,
+    };
+  }
+
   const message = finalOutputText(result.finalOutput, "I can help with this artifact.");
   await persistIfThreaded(request.userId, request.threadId, [
     userMessage,
@@ -230,21 +293,149 @@ async function finishLearningRoomMode(
 async function handleLearningRoomMode(request: z.infer<typeof learningRoomAgentRequestSchema>) {
   const prepared = prepareLearningRoomMode(request);
   const result = await run(prepared.agent, prepared.prompt, { maxTurns: 6 });
-  return finishLearningRoomMode(request, prepared.userMessage, result, prepared.commandSink);
+  return finishLearningRoomMode(request, prepared.userMessage, result, prepared.commandSink, prepared.createExperience);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object");
+}
+
+function stringProperty(value: unknown, key: string): string | null {
+  if (!isRecord(value)) return null;
+  const property = value[key];
+  return typeof property === "string" && property ? property : null;
+}
+
+function truncateDetail(value: string, maxLength = 180): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}...` : compact;
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function summarizeToolOutput(output: unknown): string | undefined {
+  const data = typeof output === "string" ? parseJsonObject(output) : isRecord(output) ? output : null;
+  if (!data) {
+    return output === undefined || output === null ? undefined : truncateDetail(String(output));
+  }
+
+  if (data.ok === false) {
+    const error = typeof data.error === "string" ? data.error : "Tool failed";
+    return truncateDetail(error);
+  }
+
+  if (data.ok === true) {
+    const parts: string[] = [];
+    if (typeof data.componentCount === "number") {
+      parts.push(`${data.componentCount} component${data.componentCount === 1 ? "" : "s"}`);
+    }
+    if (typeof data.walkthroughStepCount === "number") {
+      parts.push(`${data.walkthroughStepCount} step${data.walkthroughStepCount === 1 ? "" : "s"}`);
+    }
+    return parts.length ? `Succeeded (${parts.join(", ")})` : "Succeeded";
+  }
+
+  return truncateDetail(JSON.stringify(data));
+}
+
+function streamEventCandidates(event: unknown): unknown[] {
+  if (!isRecord(event)) return [event];
+
+  const data = event.data;
+  const nestedEvent = isRecord(data) ? data.event : undefined;
+  return [event, data, nestedEvent].filter((candidate) => candidate !== undefined);
 }
 
 function extractDeltaFromStreamEvent(event: unknown): string | null {
   if (typeof event === "string") return event;
-  if (!event || typeof event !== "object") return null;
 
-  const data = "data" in event ? (event as { data?: unknown }).data : event;
-  if (!data || typeof data !== "object") return null;
+  for (const candidate of streamEventCandidates(event)) {
+    if (!isRecord(candidate)) continue;
 
-  const delta = (data as { delta?: unknown }).delta;
-  if (typeof delta === "string") return delta;
+    const eventType = stringProperty(candidate, "type");
+    if (eventType && !eventType.includes("output_text.delta")) {
+      continue;
+    }
 
-  const text = (data as { text?: unknown }).text;
-  return typeof text === "string" ? text : null;
+    const delta = stringProperty(candidate, "delta");
+    if (delta) return delta;
+
+    const text = stringProperty(candidate, "text");
+    if (text) return text;
+
+    const choices = candidate.choices;
+    if (Array.isArray(choices)) {
+      for (const choice of choices) {
+        const content = isRecord(choice) && isRecord(choice.delta) ? stringProperty(choice.delta, "content") : null;
+        if (content) return content;
+      }
+    }
+  }
+
+  return null;
+}
+
+function toolNameForItem(item: unknown): string {
+  return (
+    stringProperty(item, "toolName") ??
+    stringProperty(item, "name") ??
+    (isRecord(item) ? stringProperty(item.rawItem, "name") : null) ??
+    "tool"
+  );
+}
+
+function outputDetailForItem(item: unknown): string | undefined {
+  if (!isRecord(item)) return undefined;
+
+  const output = item.output ?? (isRecord(item.rawItem) ? item.rawItem.output : undefined);
+  if (output === undefined || output === null) return undefined;
+
+  return summarizeToolOutput(output);
+}
+
+function traceEntryFromRunStreamEvent(event: unknown): AgentTraceEntry | null {
+  if (!isRecord(event)) return null;
+
+  if (event.type === "agent_updated_stream_event") {
+    const agentName = isRecord(event.agent) ? stringProperty(event.agent, "name") : null;
+    return { kind: "agent", label: `Using ${agentName ?? "agent"}` };
+  }
+
+  if (event.type !== "run_item_stream_event") return null;
+
+  const name = stringProperty(event, "name");
+  const item = event.item;
+  if (!name) return null;
+
+  if (name === "reasoning_item_created") {
+    return { kind: "reasoning", label: "Reasoning through next step" };
+  }
+
+  if (name === "tool_called" || name === "tool_search_called") {
+    return { kind: "tool", label: `Calling ${toolNameForItem(item)}`, detail: "Executing tool" };
+  }
+
+  if (name === "tool_output" || name === "tool_search_output_created") {
+    const toolName = toolNameForItem(item);
+    return { kind: "tool", label: `${toolName} completed`, detail: outputDetailForItem(item) };
+  }
+
+  if (name === "handoff_requested") {
+    return { kind: "handoff", label: "Handoff requested" };
+  }
+
+  if (name === "handoff_occurred") {
+    return { kind: "handoff", label: "Handoff completed" };
+  }
+
+  return null;
 }
 
 async function* readTextChunks(readable: unknown): AsyncIterable<string> {
@@ -271,19 +462,22 @@ async function* readTextChunks(readable: unknown): AsyncIterable<string> {
   }
 }
 
-async function emitRunDeltas(streamedResult: unknown, emit: (event: AgentStreamEvent) => void) {
-  const toTextStream = (streamedResult as { toTextStream?: () => unknown }).toTextStream;
-  if (typeof toTextStream === "function") {
-    for await (const delta of readTextChunks(toTextStream.call(streamedResult))) {
-      emit({ type: "delta", delta });
+async function emitRunStreamEvents(streamedResult: unknown, emit: (event: AgentStreamEvent) => void) {
+  if (typeof (streamedResult as AsyncIterable<unknown>)?.[Symbol.asyncIterator] === "function") {
+    for await (const event of streamedResult as AsyncIterable<unknown>) {
+      const traceEntry = traceEntryFromRunStreamEvent(event);
+      if (traceEntry) emit({ type: "trace", entry: traceEntry });
+
+      const delta = extractDeltaFromStreamEvent(event);
+      if (delta) emit({ type: "delta", delta });
     }
     return;
   }
 
-  if (typeof (streamedResult as AsyncIterable<unknown>)?.[Symbol.asyncIterator] === "function") {
-    for await (const event of streamedResult as AsyncIterable<unknown>) {
-      const delta = extractDeltaFromStreamEvent(event);
-      if (delta) emit({ type: "delta", delta });
+  const toTextStream = (streamedResult as { toTextStream?: () => unknown }).toTextStream;
+  if (typeof toTextStream === "function") {
+    for await (const delta of readTextChunks(toTextStream.call(streamedResult))) {
+      emit({ type: "delta", delta });
     }
   }
 }
@@ -305,7 +499,7 @@ async function runChatModeStream(
 ) {
   const prepared = prepareChatMode(request);
   const result = await run(prepared.agent, prepared.prompt, { maxTurns: 8, stream: true, signal });
-  await emitRunDeltas(result, emit);
+  await emitRunStreamEvents(result, emit);
   await waitForStreamCompletion(result);
   return finishChatMode(request, prepared.userMessage, result, prepared.createExperience);
 }
@@ -317,9 +511,9 @@ async function runLearningRoomModeStream(
 ) {
   const prepared = prepareLearningRoomMode(request);
   const result = await run(prepared.agent, prepared.prompt, { maxTurns: 6, stream: true, signal });
-  await emitRunDeltas(result, emit);
+  await emitRunStreamEvents(result, emit);
   await waitForStreamCompletion(result);
-  return finishLearningRoomMode(request, prepared.userMessage, result, prepared.commandSink);
+  return finishLearningRoomMode(request, prepared.userMessage, result, prepared.commandSink, prepared.createExperience);
 }
 
 export async function handleAgentRoute(input: unknown) {
