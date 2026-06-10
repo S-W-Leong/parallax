@@ -9,7 +9,7 @@ const createExperienceToolInputSchema = z.object({
   topic: z.string().min(1),
   title: z.string().min(1),
   summary: z.string().min(1),
-  learningOutcomes: z.array(z.string().min(1).max(96)).min(1).max(3).nullable().optional(),
+  learningOutcomes: z.array(z.string().min(1).max(96)).min(1).max(3).nullable(),
   sceneSource: z.string().min(1),
   components: z.array(z.object({
     id: z.string().min(1),

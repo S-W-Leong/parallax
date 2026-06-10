@@ -378,4 +378,14 @@ describe("AwsThreadStore", () => {
       sceneSourceS3Key: "artifacts/thread-1/artifact-1/scene.js",
     });
   });
+
+  it("omits undefined learning outcomes when saving artifact metadata", async () => {
+    const dynamo = { send: vi.fn().mockResolvedValue({}) };
+    const s3 = { send: vi.fn().mockResolvedValue({}) };
+    const store = new AwsThreadStore({ dynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" });
+
+    await store.saveArtifact("demo-1", "thread-1", artifact);
+
+    expect(dynamo.send.mock.calls[1][0].input.Item).not.toHaveProperty("learningOutcomes");
+  });
 });

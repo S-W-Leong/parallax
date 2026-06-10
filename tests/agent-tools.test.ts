@@ -21,6 +21,7 @@ describe("agent tools", () => {
       topic: "cell biology",
       title: "Inside a Cell",
       summary: "A guided tour of organelles.",
+      learningOutcomes: null,
       sceneSource,
       components: [
         { id: "membrane", label: "Cell membrane", description: null, metadata: null },
@@ -48,6 +49,7 @@ describe("agent tools", () => {
       topic: "bad",
       title: "Bad",
       summary: "Bad artifact.",
+      learningOutcomes: null,
       sceneSource: `${sceneSource}\nfetch("https://example.com")`,
       components: [
         { id: "membrane", label: "Cell membrane", description: null, metadata: null },

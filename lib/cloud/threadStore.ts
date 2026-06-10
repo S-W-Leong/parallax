@@ -246,9 +246,11 @@ export class AwsThreadStore implements ThreadStore {
       sceneSourceS3Key,
       components: artifact.components,
       walkthroughSteps: artifact.walkthroughSteps,
-      learningOutcomes: artifact.learningOutcomes,
       createdAt: artifact.createdAt,
     };
+    if (artifact.learningOutcomes !== undefined) {
+      record.learningOutcomes = artifact.learningOutcomes;
+    }
 
     await this.options.dynamo.send(
       new PutCommand({
