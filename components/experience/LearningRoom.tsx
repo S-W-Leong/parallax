@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, MessageSquare, RefreshCcw } from "lucide-react";
+import { LogOut } from "lucide-react";
 import type { ArtifactRecord, ChatMessage, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 import type { ArtifactCommand } from "@/lib/artifacts/messageBridge";
 import { ChatComposer } from "@/components/chat/ChatComposer";
@@ -18,7 +18,6 @@ type LearningRoomProps = {
   onStop?: () => void;
   onStopResponse: () => void;
   onExit: () => void;
-  onResetSession: () => void;
   onLearningRoomMessage: (message: string) => void;
   onCommandsFlushed: () => void;
   onComponentSelected: (component: SelectedComponent) => void;
@@ -38,7 +37,6 @@ export function LearningRoom({
   onStop,
   onStopResponse,
   onExit,
-  onResetSession,
   onLearningRoomMessage,
   onCommandsFlushed,
   onComponentSelected,
@@ -77,15 +75,9 @@ export function LearningRoom({
       <aside className="room-chat">
         <header>
           <div>
-            <p className="eyebrow">
-              <MessageSquare size={14} /> Tutor channel
-            </p>
-            <h2>{selectedComponent ? selectedComponent.label : artifact.topic}</h2>
+            <h2>Chat</h2>
           </div>
           <div className="toolbar-actions">
-            <button className="icon-button" onClick={onResetSession} aria-label="Start new chat" title="Start new chat">
-              <RefreshCcw size={18} />
-            </button>
             <button className="icon-button" onClick={onExit} aria-label="Exit experience" title="Exit experience">
               <LogOut size={18} />
             </button>

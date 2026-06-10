@@ -352,7 +352,6 @@ export function ParallaxArtifactApp() {
           onStop={stopResponse}
           onStopResponse={stopResponse}
           onExit={() => dispatch({ type: "exit_experience" })}
-          onResetSession={resetSession}
           onLearningRoomMessage={sendGuideMessage}
           onCommandsFlushed={() => dispatch({ type: "clear_pending_commands" })}
           onComponentSelected={selectComponent}
