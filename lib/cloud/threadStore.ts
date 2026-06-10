@@ -1,9 +1,12 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import type { AgentInputItem } from "@openai/agents";
 import type { ArtifactRecord, ChatMessage } from "@/lib/artifacts/artifactTypes";
 import { readAwsStorageConfig } from "./awsConfig";
 import {
+  agentSessionItemKey,
+  agentSessionItemPrefix,
   artifactHtmlKey,
   artifactKey,
   artifactSourceKey,
@@ -13,6 +16,7 @@ import {
   toChatMessage,
   toMessageRecord,
   toThreadSummary,
+  type AgentSessionItemRecord,
   type ArtifactMetadataRecord,
   type MessageRecord,
   type PersistedThreadSummary,
@@ -39,6 +43,10 @@ export type ThreadStore = {
   archiveThread(userId: string, threadId: string, archivedAt: string): Promise<void>;
   appendMessage(userId: string, threadId: string, message: ChatMessage): Promise<void>;
   saveArtifact(userId: string, threadId: string, artifact: ArtifactRecord): Promise<void>;
+  getAgentSessionItems(userId: string, threadId: string, limit?: number): Promise<AgentInputItem[]>;
+  appendAgentSessionItems(userId: string, threadId: string, items: AgentInputItem[]): Promise<void>;
+  popAgentSessionItem(userId: string, threadId: string): Promise<AgentInputItem | undefined>;
+  clearAgentSession(userId: string, threadId: string): Promise<void>;
 };
 
 async function bodyToString(body: unknown): Promise<string> {
@@ -62,6 +70,13 @@ function removeUndefinedProperties<T>(value: T): T {
   }
 
   return value;
+}
+
+let agentSessionSequence = 0;
+
+function nextAgentSessionSequence(): number {
+  agentSessionSequence = (agentSessionSequence + 1) % 1_000_000;
+  return agentSessionSequence;
 }
 
 export class AwsThreadStore implements ThreadStore {
@@ -219,6 +234,22 @@ export class AwsThreadStore implements ThreadStore {
     );
   }
 
+  private async ensureThreadAccessible(userId: string, threadId: string): Promise<void> {
+    const result = await this.options.dynamo.send(
+      new GetCommand({
+        TableName: this.options.tableName,
+        Key: {
+          PK: threadOwnerKey(userId),
+          SK: threadSummaryKey(threadId),
+        },
+      }),
+    );
+    const summary = (result as { Item?: ThreadSummaryRecord }).Item;
+    if (!summary || summary.archivedAt) {
+      throw new Error("Thread not found");
+    }
+  }
+
   async appendMessage(userId: string, threadId: string, message: ChatMessage): Promise<void> {
     await this.touchThread(userId, threadId, message.createdAt, message.role === "user" ? titleFromMessage(message.content) : undefined);
     await this.options.dynamo.send(
@@ -289,6 +320,105 @@ export class AwsThreadStore implements ThreadStore {
         TableName: this.options.tableName,
         Item: record,
       }),
+    );
+  }
+
+  async getAgentSessionItems(userId: string, threadId: string, limit?: number): Promise<AgentInputItem[]> {
+    await this.ensureThreadAccessible(userId, threadId);
+
+    const result = await this.options.dynamo.send(
+      new QueryCommand({
+        TableName: this.options.tableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sessionPrefix)",
+        ExpressionAttributeValues: {
+          ":pk": threadPartitionKey(threadId),
+          ":sessionPrefix": agentSessionItemPrefix(),
+        },
+        ...(limit ? { ScanIndexForward: false, Limit: limit } : {}),
+      }),
+    );
+
+    const records = ((result as { Items?: AgentSessionItemRecord[] }).Items ?? []);
+    const chronological = limit ? [...records].reverse() : records;
+    return chronological.map((record) => record.item);
+  }
+
+  async appendAgentSessionItems(userId: string, threadId: string, items: AgentInputItem[]): Promise<void> {
+    if (items.length === 0) return;
+
+    await this.touchThread(userId, threadId, new Date().toISOString());
+    await Promise.all(
+      items.map((item) => {
+        const record: AgentSessionItemRecord = {
+          PK: threadPartitionKey(threadId),
+          SK: agentSessionItemKey(new Date().toISOString(), nextAgentSessionSequence(), crypto.randomUUID()),
+          entityType: "agent_session_item",
+          threadId,
+          item: removeUndefinedProperties(item),
+        };
+
+        return this.options.dynamo.send(
+          new PutCommand({
+            TableName: this.options.tableName,
+            Item: record,
+          }),
+        );
+      }),
+    );
+  }
+
+  async popAgentSessionItem(userId: string, threadId: string): Promise<AgentInputItem | undefined> {
+    await this.ensureThreadAccessible(userId, threadId);
+
+    const result = await this.options.dynamo.send(
+      new QueryCommand({
+        TableName: this.options.tableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sessionPrefix)",
+        ExpressionAttributeValues: {
+          ":pk": threadPartitionKey(threadId),
+          ":sessionPrefix": agentSessionItemPrefix(),
+        },
+        ScanIndexForward: false,
+        Limit: 1,
+      }),
+    );
+    const record = ((result as { Items?: AgentSessionItemRecord[] }).Items ?? [])[0];
+    if (!record) return undefined;
+
+    await this.options.dynamo.send(
+      new DeleteCommand({
+        TableName: this.options.tableName,
+        Key: { PK: record.PK, SK: record.SK },
+      }),
+    );
+
+    return record.item;
+  }
+
+  async clearAgentSession(userId: string, threadId: string): Promise<void> {
+    await this.ensureThreadAccessible(userId, threadId);
+
+    const result = await this.options.dynamo.send(
+      new QueryCommand({
+        TableName: this.options.tableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sessionPrefix)",
+        ExpressionAttributeValues: {
+          ":pk": threadPartitionKey(threadId),
+          ":sessionPrefix": agentSessionItemPrefix(),
+        },
+      }),
+    );
+
+    const records = (result as { Items?: AgentSessionItemRecord[] }).Items ?? [];
+    await Promise.all(
+      records.map((record) =>
+        this.options.dynamo.send(
+          new DeleteCommand({
+            TableName: this.options.tableName,
+            Key: { PK: record.PK, SK: record.SK },
+          }),
+        ),
+      ),
     );
   }
 }

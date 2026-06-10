@@ -234,10 +234,31 @@ export function ParallaxArtifactApp() {
     }
   }
 
-  async function sendChatMessage(message: string) {
+  async function sendGuideMessage(message: string) {
     if (!activeThreadId) return;
     const threadId = activeThreadId;
     const activeSession = getThreadSession(threadId) ?? state;
+
+    if (activeSession.mode === "learning_room" && activeArtifact) {
+      await streamAgentMessage({
+        threadId,
+        message,
+        mode: "learning_room",
+        artifactId: activeArtifact.id,
+        initialDraft: "Thinking...",
+        body: {
+          threadId,
+          userId,
+          message,
+          artifact: activeArtifact,
+          messages: activeSession.messages,
+          selectedComponent: activeSession.selectedComponent,
+          activeStepId: activeSession.activeStepId,
+        },
+      });
+      return;
+    }
+
     await streamAgentMessage({
       threadId,
       message,
@@ -251,28 +272,6 @@ export function ParallaxArtifactApp() {
         artifacts: activeSession.artifacts,
         activeArtifactId: activeSession.activeArtifactId,
         lastArtifactId: activeSession.lastArtifactId,
-      },
-    });
-  }
-
-  async function sendLearningRoomMessage(message: string) {
-    if (!activeArtifact || !activeThreadId) return;
-    const threadId = activeThreadId;
-    const activeSession = getThreadSession(threadId) ?? state;
-    await streamAgentMessage({
-      threadId,
-      message,
-      mode: "learning_room",
-      artifactId: activeArtifact.id,
-      initialDraft: "Thinking...",
-      body: {
-        threadId,
-        userId,
-        message,
-        artifact: activeArtifact,
-        messages: activeSession.messages,
-        selectedComponent: activeSession.selectedComponent,
-        activeStepId: activeSession.activeStepId,
       },
     });
   }
@@ -348,7 +347,7 @@ export function ParallaxArtifactApp() {
           onStopResponse={stopResponse}
           onExit={() => dispatch({ type: "exit_experience" })}
           onResetSession={resetSession}
-          onLearningRoomMessage={sendLearningRoomMessage}
+          onLearningRoomMessage={sendGuideMessage}
           onCommandsFlushed={() => dispatch({ type: "clear_pending_commands" })}
           onComponentSelected={selectComponent}
           onStepChanged={(stepId, title) => dispatch({ type: "step_changed", stepId, title })}
@@ -383,7 +382,7 @@ export function ParallaxArtifactApp() {
         artifacts={state.artifacts}
         trace={state.trace}
         busy={busy}
-        onSendMessage={sendChatMessage}
+        onSendMessage={sendGuideMessage}
         onStop={stopResponse}
         onEnterExperience={enterExperience}
       />

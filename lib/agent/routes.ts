@@ -11,10 +11,9 @@ import {
 } from "@/lib/artifacts/artifactTypes";
 import { getThreadStore } from "@/lib/cloud/threadStore";
 import { encodeAgentStreamEvent, type AgentStreamEvent } from "./streamProtocol";
-import { makeBuilderAgent, makeCriticAgent, makePlannerAgent, makeTutorAgent } from "./agents";
-import { makeArtifactCritiqueToolSink, type ArtifactCritique } from "./tools/artifactCritiqueTool";
-import { makeCreateExperienceToolSink } from "./tools/createExperienceTool";
-import { makeLessonPlanToolSink, type LessonPlan } from "./tools/lessonPlanTool";
+import { makeGuideAgent } from "./agents";
+import { ThreadAgentSession } from "./threadAgentSession";
+import { makeBuildLearningArtifactToolSink } from "./tools/buildLearningArtifactTool";
 import { makeResearchStemTopicTool } from "./tools/researchStemTopicTool";
 import { makeSendArtifactCommandSink } from "./tools/sendArtifactCommandTool";
 
@@ -100,13 +99,6 @@ async function persistIfThreaded(userId: string | undefined, threadId: string | 
   if (assistantMessage) await store.appendMessage(userId, threadId, assistantMessage);
 }
 
-function recentConversation(messages: ChatMessage[]): string {
-  return messages
-    .slice(-10)
-    .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
-    .join("\n");
-}
-
 function promptArtifactPayload(artifact: ArtifactRecord) {
   return {
     id: artifact.id,
@@ -133,11 +125,46 @@ function latestArtifactForChat(request: z.infer<typeof chatAgentRequestSchema>):
   return null;
 }
 
-function latestArtifactContextForChat(request: z.infer<typeof chatAgentRequestSchema>): string {
-  const artifact = latestArtifactForChat(request);
-  if (!artifact) return "";
+function activeArtifactForGuide(request: z.infer<typeof agentRouteRequestSchema>): ArtifactRecord | null {
+  if (request.mode === "learning_room") return request.artifact;
+  return latestArtifactForChat(request);
+}
 
-  return `Latest artifact context for rebuild/patch follow-ups:\n${JSON.stringify(promptArtifactPayload(artifact), null, 2)}`;
+function activeStepForGuide(request: z.infer<typeof agentRouteRequestSchema>, artifact: ArtifactRecord | null) {
+  if (request.mode !== "learning_room" || !artifact) return null;
+  return artifact.walkthroughSteps.find((step) => step.id === request.activeStepId) ?? null;
+}
+
+function artifactGuidePayload(artifact: ArtifactRecord) {
+  return {
+    ...promptArtifactPayload(artifact),
+    lessonMode: artifact.lessonMode,
+    interactionGoal: artifact.interactionGoal,
+    controls: artifact.controls ?? [],
+    sources: artifact.sources ?? [],
+  };
+}
+
+function makeGuidePrompt(request: z.infer<typeof agentRouteRequestSchema>, artifact: ArtifactRecord | null): string {
+  const context = {
+    surface: request.mode,
+    visibleArtifact: request.mode === "learning_room" && Boolean(artifact),
+    activeArtifact: artifact ? artifactGuidePayload(artifact) : null,
+    selectedComponent: request.mode === "learning_room" ? request.selectedComponent : null,
+    activeStep: activeStepForGuide(request, artifact),
+    lastArtifactId: request.mode === "chat" ? request.lastArtifactId ?? null : artifact?.id ?? null,
+  };
+
+  return `Context:\n${JSON.stringify(context)}\n\nUser message:\n${request.message}`;
+}
+
+function makeThreadSession(userId: string | undefined, threadId: string | undefined) {
+  if (!userId || !threadId) return undefined;
+  return new ThreadAgentSession({
+    userId,
+    threadId,
+    store: getThreadStore(),
+  });
 }
 
 function makeErrorMessage(error: unknown): string {
@@ -177,335 +204,6 @@ function toErrorDoneEvent(error: unknown): AgentStreamEvent {
     commands: [],
     error: message,
   };
-}
-
-function prepareChatMode(request: z.infer<typeof chatAgentRequestSchema>) {
-  const userMessage = makeMessage("user", request.message);
-  const lessonPlan = makeLessonPlanToolSink();
-  const plannerAgent = makePlannerAgent([makeResearchStemTopicTool(), lessonPlan.tool]);
-  const createExperience = makeCreateExperienceToolSink();
-  const builderAgent = makeBuilderAgent([createExperience.tool]);
-  const history = recentConversation(request.messages);
-  const artifactContext = latestArtifactContextForChat(request);
-  const plannerPrompt = `Mode: chat
-${history ? `Recent conversation:\n${history}\n\n` : ""}${artifactContext ? `${artifactContext}\n\n` : ""}User request:\n${request.message}`;
-
-  return { userMessage, lessonPlan, createExperience, plannerAgent, builderAgent, plannerPrompt };
-}
-
-function makeBuilderPrompt(
-  plan: LessonPlan,
-  requestMessage: string,
-  feedback?: { critic?: ArtifactCritique; validatorError?: string },
-): string {
-  const criticFeedback = feedback?.critic
-    ? `\n\nCritic feedback from previous attempt:\n${JSON.stringify(feedback.critic, null, 2)}`
-    : "";
-  const validatorFeedback = feedback?.validatorError
-    ? `\n\nValidator feedback from previous attempt:\n${feedback.validatorError}\nRepair the artifact and call create_experience exactly once. Match the selected lessonMode rules exactly.`
-    : "";
-  return `Lesson plan:\n${JSON.stringify(plan)}\n\nOriginal user request:\n${requestMessage}${criticFeedback}${validatorFeedback}`;
-}
-
-function makeChatArtifactTrace(plan: LessonPlan): string[] {
-  return [
-    "Choosing lesson mode",
-    plan.researchUsed ? "Grounding lesson plan with Exa" : "Skipping research for stable topic",
-    `Selected ${plan.lessonMode ?? "unknown"} lesson mode`,
-    "Generating interactive 3D artifact",
-    "Validating artifact contract",
-  ];
-}
-
-function makeCriticPrompt(plan: LessonPlan, artifact: ArtifactRecord, requestMessage: string): string {
-  const artifactForReview = {
-    id: artifact.id,
-    title: artifact.title,
-    topic: artifact.topic,
-    summary: artifact.summary,
-    lessonMode: artifact.lessonMode,
-    interactionGoal: artifact.interactionGoal,
-    sources: artifact.sources ?? [],
-    controls: artifact.controls ?? [],
-    components: artifact.components,
-    walkthroughSteps: artifact.walkthroughSteps,
-    sceneSource: artifact.sceneSource,
-  };
-
-  return `Lesson plan:\n${JSON.stringify(plan, null, 2)}\n\nOriginal user request:\n${requestMessage}\n\nArtifact to review:\n${JSON.stringify(artifactForReview, null, 2)}`;
-}
-
-async function critiqueArtifact(plan: LessonPlan, artifact: ArtifactRecord, requestMessage: string) {
-  const critiqueSink = makeArtifactCritiqueToolSink();
-  const criticAgent = makeCriticAgent([critiqueSink.tool]);
-  await run(criticAgent, makeCriticPrompt(plan, artifact, requestMessage), { maxTurns: 4 });
-
-  const critique = critiqueSink.getResult();
-  if (!critique) {
-    return {
-      ok: false as const,
-      error: "The artifact critic did not call critique_artifact.",
-    };
-  }
-
-  return {
-    ok: true as const,
-    critique,
-  };
-}
-
-function critiqueIssueSummary(critique: ArtifactCritique): string {
-  return [
-    ...critique.factualIssues,
-    ...critique.visualIssues,
-    ...critique.interactionIssues,
-    ...critique.missingComponents.map((component) => `Missing component: ${component}`),
-  ].join(" ");
-}
-
-function blockedArtifactMessage(title: string, critique: ArtifactCritique): string {
-  const issueSummary = critiqueIssueSummary(critique);
-  const repair = critique.repairInstructions ? `Repair guidance: ${critique.repairInstructions}` : "";
-  const detail = [issueSummary, repair].filter(Boolean).join(" ");
-  return `I couldn't generate a reliable artifact for "${title}" yet.${detail ? ` ${detail}` : ""}`;
-}
-
-async function finishDirectPlannerAnswer(
-  request: z.infer<typeof chatAgentRequestSchema>,
-  userMessage: ChatMessage,
-  result: { finalOutput?: unknown },
-) {
-  const assistantMessage = makeMessage(
-    "assistant",
-    finalOutputText(result.finalOutput, "I can help you learn STEM topics or build an interactive 3D experience."),
-  );
-  await persistIfThreaded(request.userId, request.threadId, [userMessage, assistantMessage]);
-  return {
-    message: assistantMessage.content,
-    trace: [],
-    artifact: null,
-    error: null,
-  };
-}
-
-async function finishArtifactBuildFailure(
-  request: z.infer<typeof chatAgentRequestSchema>,
-  userMessage: ChatMessage,
-  errorMessage: string,
-  trace: string[],
-) {
-  const assistantMessage = makeMessage("assistant", errorMessage);
-  await persistIfThreaded(request.userId, request.threadId, [userMessage, assistantMessage]);
-  return {
-    message: errorMessage,
-    trace,
-    artifact: null,
-    error: errorMessage,
-  };
-}
-
-function missingCreateExperienceErrorMessage(plan?: LessonPlan): string {
-  const title = plan?.title?.trim();
-  return title
-    ? `The builder did not call create_experience for the planned artifact "${title}".`
-    : "The builder did not call create_experience for the planned artifact.";
-}
-
-async function finishChatMode(
-  request: z.infer<typeof chatAgentRequestSchema>,
-  userMessage: ChatMessage,
-  result: { finalOutput?: unknown },
-  createExperience: ReturnType<typeof makeCreateExperienceToolSink>,
-  plan?: LessonPlan,
-  builderAgent?: ReturnType<typeof makeBuilderAgent>,
-  requestMessage?: string,
-) {
-  let artifactResult = createExperience.getResult();
-  const trace = plan ? makeChatArtifactTrace(plan) : [];
-
-  if ((!artifactResult || !artifactResult.ok) && plan?.artifactNeeded && builderAgent && requestMessage) {
-    const validationError = artifactResult?.ok === false
-      ? artifactResult.error
-      : missingCreateExperienceErrorMessage(plan);
-    trace.push("Repairing artifact from validator feedback");
-    createExperience.clearResult();
-    result = await run(
-      builderAgent,
-      makeBuilderPrompt(plan, requestMessage, { validatorError: validationError }),
-      { maxTurns: 8 },
-    );
-    artifactResult = createExperience.getResult();
-  }
-
-  if (!artifactResult) {
-    if (plan?.artifactNeeded) {
-      return finishArtifactBuildFailure(
-        request,
-        userMessage,
-        missingCreateExperienceErrorMessage(plan),
-        trace,
-      );
-    }
-    return finishDirectPlannerAnswer(request, userMessage, result);
-  }
-
-  if (!artifactResult.ok) {
-    return finishArtifactBuildFailure(request, userMessage, artifactResult.error, trace);
-  }
-
-  let acceptedArtifact = artifactResult.artifact;
-  let acceptedResult = result;
-
-  if (plan && builderAgent && requestMessage) {
-    trace.push("Reviewing artifact accuracy");
-    const critique = await critiqueArtifact(plan, acceptedArtifact, requestMessage);
-    if (!critique.ok) {
-      return finishArtifactBuildFailure(request, userMessage, critique.error, trace);
-    }
-
-    if (!critique.critique.approved) {
-      trace.push("Repairing artifact from critic feedback");
-      createExperience.clearResult();
-      const retryResult = await run(builderAgent, makeBuilderPrompt(plan, requestMessage, { critic: critique.critique }), { maxTurns: 8 });
-      const retryArtifactResult = createExperience.getResult();
-
-      if (!retryArtifactResult) {
-        return finishArtifactBuildFailure(
-          request,
-          userMessage,
-          missingCreateExperienceErrorMessage(plan),
-          trace,
-        );
-      }
-
-      if (!retryArtifactResult.ok) {
-        return finishArtifactBuildFailure(request, userMessage, retryArtifactResult.error, trace);
-      }
-
-      trace.push("Re-reviewing artifact accuracy");
-      const retryCritique = await critiqueArtifact(plan, retryArtifactResult.artifact, requestMessage);
-      if (!retryCritique.ok) {
-        return finishArtifactBuildFailure(request, userMessage, retryCritique.error, trace);
-      }
-
-      if (!retryCritique.critique.approved) {
-        const message = blockedArtifactMessage(retryArtifactResult.artifact.title, retryCritique.critique);
-        return finishArtifactBuildFailure(request, userMessage, message, trace);
-      }
-
-      acceptedArtifact = retryArtifactResult.artifact;
-      acceptedResult = retryResult;
-    }
-  }
-
-  const messageText = finalOutputText(acceptedResult.finalOutput, `I built ${acceptedArtifact.title}.`);
-  const assistantMessage = makeMessage("assistant", messageText, acceptedArtifact.id);
-  await persistIfThreaded(request.userId, request.threadId, [userMessage, assistantMessage], acceptedArtifact);
-  return {
-    message: messageText,
-    trace,
-    artifact: acceptedArtifact,
-    error: null,
-  };
-}
-
-async function handleChatMode(request: z.infer<typeof chatAgentRequestSchema>) {
-  const prepared = prepareChatMode(request);
-  const plannerResult = await run(prepared.plannerAgent, prepared.plannerPrompt, { maxTurns: 6 });
-  const planned = prepared.lessonPlan.getResult();
-
-  if (!planned?.ok || !planned.plan.artifactNeeded) {
-    return finishDirectPlannerAnswer(request, prepared.userMessage, plannerResult);
-  }
-
-  const builderResult = await run(prepared.builderAgent, makeBuilderPrompt(planned.plan, request.message), { maxTurns: 8 });
-  return finishChatMode(
-    request,
-    prepared.userMessage,
-    builderResult,
-    prepared.createExperience,
-    planned.plan,
-    prepared.builderAgent,
-    request.message,
-  );
-}
-
-function prepareLearningRoomMode(request: z.infer<typeof learningRoomAgentRequestSchema>) {
-  const userMessage = makeMessage("user", request.message, request.artifact.id);
-  const commandSink = makeSendArtifactCommandSink();
-  const createExperience = makeCreateExperienceToolSink();
-  const agent = makeTutorAgent([commandSink.tool, createExperience.tool]);
-  const activeStep = request.artifact.walkthroughSteps.find((step) => step.id === request.activeStepId) ?? null;
-  const context = {
-    mode: "learning_room",
-    artifact: {
-      ...promptArtifactPayload(request.artifact),
-      lessonMode: request.artifact.lessonMode,
-      interactionGoal: request.artifact.interactionGoal,
-      controls: request.artifact.controls ?? [],
-      sources: request.artifact.sources ?? [],
-    },
-    selectedComponent: request.selectedComponent,
-    activeStep,
-    conversation: recentConversation(request.messages),
-  };
-  const prompt = `Context:\n${JSON.stringify(context)}\n\nUser question:\n${request.message}`;
-
-  return { userMessage, commandSink, createExperience, agent, prompt };
-}
-
-async function finishLearningRoomMode(
-  request: z.infer<typeof learningRoomAgentRequestSchema>,
-  userMessage: ChatMessage,
-  result: { finalOutput?: unknown },
-  commandSink: ReturnType<typeof makeSendArtifactCommandSink>,
-  createExperience: ReturnType<typeof makeCreateExperienceToolSink>,
-) {
-  const artifactResult = createExperience.getResult();
-  if (artifactResult) {
-    const trace = ["Planning replacement scene", "Generating replacement 3D artifact", "Validating artifact contract"];
-
-    if (!artifactResult.ok) {
-      return {
-        message: artifactResult.error,
-        trace,
-        artifact: null,
-        commands: [],
-        error: artifactResult.error,
-      };
-    }
-
-    const message = finalOutputText(result.finalOutput, `I rebuilt ${artifactResult.artifact.title}.`);
-    await persistIfThreaded(request.userId, request.threadId, [
-      userMessage,
-      makeMessage("assistant", message, artifactResult.artifact.id),
-    ], artifactResult.artifact);
-
-    return {
-      message,
-      trace,
-      artifact: artifactResult.artifact,
-      commands: [],
-      error: null,
-    };
-  }
-
-  const message = finalOutputText(result.finalOutput, "I can help with this artifact.");
-  await persistIfThreaded(request.userId, request.threadId, [
-    userMessage,
-    makeMessage("assistant", message, request.artifact.id),
-  ]);
-
-  return {
-    message,
-    commands: commandSink.getCommands(),
-  };
-}
-
-async function handleLearningRoomMode(request: z.infer<typeof learningRoomAgentRequestSchema>) {
-  const prepared = prepareLearningRoomMode(request);
-  const result = await run(prepared.agent, prepared.prompt, { maxTurns: 6 });
-  return finishLearningRoomMode(request, prepared.userMessage, result, prepared.commandSink, prepared.createExperience);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -572,7 +270,7 @@ function extractDeltaFromStreamEvent(event: unknown): string | null {
     if (!isRecord(candidate)) continue;
 
     const eventType = stringProperty(candidate, "type");
-    if (eventType && !eventType.includes("output_text.delta")) {
+    if (eventType && !eventType.includes("output_text.delta") && eventType !== "text_delta") {
       continue;
     }
 
@@ -704,64 +402,99 @@ async function waitForStreamCompletion(streamedResult: unknown) {
   if (streamError) throw streamError;
 }
 
-async function runChatModeStream(
-  request: z.infer<typeof chatAgentRequestSchema>,
+async function finishGuideMode(
+  request: z.infer<typeof agentRouteRequestSchema>,
+  result: { finalOutput?: unknown },
+  userMessage: ChatMessage,
+  activeArtifact: ArtifactRecord | null,
+  buildArtifact: ReturnType<typeof makeBuildLearningArtifactToolSink>,
+  commandSink: ReturnType<typeof makeSendArtifactCommandSink>,
+): Promise<AgentRouteResult> {
+  const artifactResult = buildArtifact.getResult();
+  if (artifactResult) {
+    if (!artifactResult.ok) {
+      const assistantMessage = makeMessage("assistant", artifactResult.message, activeArtifact?.id);
+      await persistIfThreaded(request.userId, request.threadId, [userMessage, assistantMessage]);
+      return {
+        message: artifactResult.message,
+        trace: artifactResult.trace,
+        artifact: null,
+        commands: [],
+        error: artifactResult.error,
+      };
+    }
+
+    const message = finalOutputText(result.finalOutput, artifactResult.message);
+    const assistantMessage = makeMessage("assistant", message, artifactResult.artifact.id);
+    await persistIfThreaded(request.userId, request.threadId, [userMessage, assistantMessage], artifactResult.artifact);
+    return {
+      message,
+      trace: artifactResult.trace,
+      artifact: artifactResult.artifact,
+      commands: commandSink.getCommands(),
+      error: null,
+    };
+  }
+
+  const message = finalOutputText(result.finalOutput, "I can help you learn STEM topics or build an interactive 3D experience.");
+  const assistantMessage = makeMessage("assistant", message, activeArtifact?.id);
+  await persistIfThreaded(request.userId, request.threadId, [userMessage, assistantMessage]);
+  return {
+    message,
+    trace: [],
+    artifact: null,
+    commands: commandSink.getCommands(),
+    error: null,
+  };
+}
+
+async function handleGuideMode(request: z.infer<typeof agentRouteRequestSchema>, signal?: AbortSignal) {
+  const activeArtifact = activeArtifactForGuide(request);
+  const userMessage = makeMessage("user", request.message, activeArtifact?.id);
+  const buildArtifact = makeBuildLearningArtifactToolSink();
+  const commandSink = makeSendArtifactCommandSink();
+  const tools = activeArtifact
+    ? [makeResearchStemTopicTool(), buildArtifact.tool, commandSink.tool]
+    : [makeResearchStemTopicTool(), buildArtifact.tool];
+  const guideAgent = makeGuideAgent(tools);
+  const result = await run(guideAgent, makeGuidePrompt(request, activeArtifact), {
+    maxTurns: 8,
+    signal,
+    session: makeThreadSession(request.userId, request.threadId),
+  });
+
+  return finishGuideMode(request, result, userMessage, activeArtifact, buildArtifact, commandSink);
+}
+
+async function runGuideModeStream(
+  request: z.infer<typeof agentRouteRequestSchema>,
   emit: (event: AgentStreamEvent) => void,
   signal: AbortSignal,
 ) {
-  const prepared = prepareChatMode(request);
-  emit({ type: "status", message: "Thinking..." });
-  const plannerResult = await run(prepared.plannerAgent, prepared.plannerPrompt, { maxTurns: 6, signal });
-  const planned = prepared.lessonPlan.getResult();
-
-  if (!planned?.ok || !planned.plan.artifactNeeded) {
-    return finishDirectPlannerAnswer(request, prepared.userMessage, plannerResult);
-  }
-
-  emit({
-    type: "status",
-    message: planned.plan.researchUsed ? "Using grounded sources..." : `Selected ${planned.plan.lessonMode} mode...`,
-  });
-  emit({ type: "status", message: "Building the interactive artifact..." });
-  const result = await run(prepared.builderAgent, makeBuilderPrompt(planned.plan, request.message), {
+  const activeArtifact = activeArtifactForGuide(request);
+  const userMessage = makeMessage("user", request.message, activeArtifact?.id);
+  const buildArtifact = makeBuildLearningArtifactToolSink();
+  const commandSink = makeSendArtifactCommandSink();
+  const tools = activeArtifact
+    ? [makeResearchStemTopicTool(), buildArtifact.tool, commandSink.tool]
+    : [makeResearchStemTopicTool(), buildArtifact.tool];
+  const guideAgent = makeGuideAgent(tools);
+  const result = await run(guideAgent, makeGuidePrompt(request, activeArtifact), {
     maxTurns: 8,
     stream: true,
     signal,
+    session: makeThreadSession(request.userId, request.threadId),
   });
   await emitRunStreamEvents(result, emit);
   await waitForStreamCompletion(result);
-  return finishChatMode(
-    request,
-    prepared.userMessage,
-    result,
-    prepared.createExperience,
-    planned.plan,
-    prepared.builderAgent,
-    request.message,
-  );
-}
-
-async function runLearningRoomModeStream(
-  request: z.infer<typeof learningRoomAgentRequestSchema>,
-  emit: (event: AgentStreamEvent) => void,
-  signal: AbortSignal,
-) {
-  const prepared = prepareLearningRoomMode(request);
-  const result = await run(prepared.agent, prepared.prompt, { maxTurns: 6, stream: true, signal });
-  await emitRunStreamEvents(result, emit);
-  await waitForStreamCompletion(result);
-  return finishLearningRoomMode(request, prepared.userMessage, result, prepared.commandSink, prepared.createExperience);
+  return finishGuideMode(request, result, userMessage, activeArtifact, buildArtifact, commandSink);
 }
 
 export async function handleAgentRoute(input: unknown) {
   requireOpenAiKey();
   const request = agentRouteRequestSchema.parse(input);
 
-  if (request.mode === "chat") {
-    return handleChatMode(request);
-  }
-
-  return handleLearningRoomMode(request);
+  return handleGuideMode(request);
 }
 
 export function handleAgentRouteStream(input: unknown, options: { signal?: AbortSignal } = {}): ReadableStream<Uint8Array> {
@@ -807,17 +540,13 @@ export function handleAgentRouteStream(input: unknown, options: { signal?: Abort
         }
       };
 
-      if ((input as { mode?: unknown } | null)?.mode !== "chat") {
-        emit({ type: "status", message: streamStatusForMode((input as { mode?: unknown } | null)?.mode) });
-      }
+      emit({ type: "status", message: streamStatusForMode((input as { mode?: unknown } | null)?.mode) });
 
       void (async () => {
         try {
           requireOpenAiKey();
           const request = agentRouteRequestSchema.parse(input);
-          const result = request.mode === "chat"
-            ? await runChatModeStream(request, emit, abortController.signal)
-            : await runLearningRoomModeStream(request, emit, abortController.signal);
+          const result = await runGuideModeStream(request, emit, abortController.signal);
           emit(toDoneEvent(result));
         } catch (error) {
           if (!abortController.signal.aborted) {

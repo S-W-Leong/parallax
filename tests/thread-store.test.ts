@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AgentInputItem } from "@openai/agents";
 import type { ArtifactRecord, ChatMessage } from "@/lib/artifacts/artifactTypes";
 import { readAwsStorageConfig } from "@/lib/cloud/awsConfig";
 import { AwsThreadStore } from "@/lib/cloud/threadStore";
@@ -40,6 +41,19 @@ const artifact: ArtifactRecord = {
   ],
   createdAt: "2026-06-09T14:01:00.000Z",
 };
+
+const sessionUserItem = {
+  type: "message",
+  role: "user",
+  content: "Teach me cells",
+} satisfies AgentInputItem;
+
+const sessionAssistantItem = {
+  type: "message",
+  role: "assistant",
+  status: "completed",
+  content: [{ type: "output_text", text: "Cells use membranes to separate inside from outside." }],
+} satisfies AgentInputItem;
 
 function hasNestedUndefined(value: unknown): boolean {
   if (value === undefined) return true;
@@ -538,5 +552,127 @@ describe("AwsThreadStore", () => {
     expect(item.walkthroughSteps[0].camera).not.toHaveProperty("position");
     expect(item.walkthroughSteps[0].camera.lookAt).toEqual([0, 0, 0]);
     expect(item.learningOutcomes).toEqual(["Trace airflow"]);
+  });
+
+  it("stores SDK session items under the thread partition", async () => {
+    const dynamo = { send: vi.fn().mockResolvedValue({}) };
+    const s3 = { send: vi.fn().mockResolvedValue({}) };
+    const store = new AwsThreadStore({ dynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" });
+
+    await store.appendAgentSessionItems("demo-1", "thread-1", [sessionUserItem, sessionAssistantItem]);
+
+    expect(dynamo.send).toHaveBeenCalledTimes(3);
+    expect(dynamo.send.mock.calls[0][0].input).toMatchObject({
+      TableName: "threads-table",
+      Key: {
+        PK: "USER#demo-1",
+        SK: "THREAD#thread-1",
+      },
+      UpdateExpression: "SET updatedAt = :updatedAt",
+      ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK) AND attribute_not_exists(archivedAt)",
+    });
+    expect(dynamo.send.mock.calls[1][0].input.Item).toMatchObject({
+      PK: "THREAD#thread-1",
+      entityType: "agent_session_item",
+      threadId: "thread-1",
+      item: sessionUserItem,
+    });
+    expect(dynamo.send.mock.calls[1][0].input.Item.SK).toMatch(/^AGENT_SESSION#/);
+    expect(dynamo.send.mock.calls[2][0].input.Item).toMatchObject({
+      PK: "THREAD#thread-1",
+      entityType: "agent_session_item",
+      threadId: "thread-1",
+      item: sessionAssistantItem,
+    });
+  });
+
+  it("validates ownership before reading SDK session history and returns limited items chronologically", async () => {
+    const dynamo = {
+      send: vi
+        .fn()
+        .mockResolvedValueOnce({
+          Item: {
+            PK: "USER#demo-1",
+            SK: "THREAD#thread-1",
+            entityType: "thread",
+            userId: "demo-1",
+            threadId: "thread-1",
+            title: "Cells",
+            createdAt: "2026-06-09T14:00:00.000Z",
+            updatedAt: "2026-06-09T14:02:00.000Z",
+          },
+        })
+        .mockResolvedValueOnce({
+          Items: [
+            {
+              PK: "THREAD#thread-1",
+              SK: "AGENT_SESSION#2026-06-09T14:02:00.000Z#000002#item-2",
+              entityType: "agent_session_item",
+              threadId: "thread-1",
+              item: sessionAssistantItem,
+            },
+            {
+              PK: "THREAD#thread-1",
+              SK: "AGENT_SESSION#2026-06-09T14:01:00.000Z#000001#item-1",
+              entityType: "agent_session_item",
+              threadId: "thread-1",
+              item: sessionUserItem,
+            },
+          ],
+        }),
+    };
+    const s3 = { send: vi.fn().mockResolvedValue({}) };
+    const store = new AwsThreadStore({ dynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" });
+
+    const items = await store.getAgentSessionItems("demo-1", "thread-1", 2);
+
+    expect(dynamo.send.mock.calls[0][0].input).toMatchObject({
+      TableName: "threads-table",
+      Key: {
+        PK: "USER#demo-1",
+        SK: "THREAD#thread-1",
+      },
+    });
+    expect(dynamo.send.mock.calls[1][0].input).toMatchObject({
+      TableName: "threads-table",
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :sessionPrefix)",
+      ExpressionAttributeValues: {
+        ":pk": "THREAD#thread-1",
+        ":sessionPrefix": "AGENT_SESSION#",
+      },
+      ScanIndexForward: false,
+      Limit: 2,
+    });
+    expect(items).toEqual([sessionUserItem, sessionAssistantItem]);
+  });
+
+  it("does not read SDK session items for archived or missing threads", async () => {
+    const s3 = { send: vi.fn().mockResolvedValue({}) };
+    const archivedDynamo = {
+      send: vi.fn().mockResolvedValue({
+        Item: {
+          PK: "USER#demo-1",
+          SK: "THREAD#thread-1",
+          entityType: "thread",
+          userId: "demo-1",
+          threadId: "thread-1",
+          title: "Cells",
+          createdAt: "2026-06-09T14:00:00.000Z",
+          updatedAt: "2026-06-09T14:02:00.000Z",
+          archivedAt: "2026-06-09T15:00:00.000Z",
+        },
+      }),
+    };
+    const missingDynamo = { send: vi.fn().mockResolvedValue({}) };
+
+    await expect(new AwsThreadStore({ dynamo: archivedDynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" }).getAgentSessionItems("demo-1", "thread-1")).rejects.toThrow(
+      "Thread not found",
+    );
+    await expect(new AwsThreadStore({ dynamo: missingDynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" }).getAgentSessionItems("demo-1", "thread-1")).rejects.toThrow(
+      "Thread not found",
+    );
+    expect(archivedDynamo.send).toHaveBeenCalledTimes(1);
+    expect(missingDynamo.send).toHaveBeenCalledTimes(1);
+    expect(s3.send).not.toHaveBeenCalled();
   });
 });

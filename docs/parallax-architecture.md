@@ -6,7 +6,7 @@
 ![AWS IAM](https://img.shields.io/badge/AWS-IAM-FF9900?logo=amazonaws&logoColor=white)
 ![OpenAI](https://img.shields.io/badge/OpenAI-Agents%20SDK-412991?logo=openai&logoColor=white)
 
-Parallax is a chat-first STEM learning app. OpenAI Agents SDK agents split the work into lesson planning, artifact building, and in-room tutoring. The Planner chooses the best lesson mode and can optionally ground niche or source-specific topics with Exa; the Builder creates a sandboxed Three.js artifact from that plan; the Tutor answers questions and controls the active learning room through tools.
+Parallax is a chat-first STEM learning app. A single user-facing OpenAI Agents SDK Guide Agent owns the live conversation across the normal chat surface and the learning room. The Guide can answer directly, ground niche or source-specific topics with Exa, command the active artifact, or call a hidden artifact-building workflow. That workflow runs Builder and Critic agents behind a `build_learning_artifact` tool, validates the sandboxed Three.js artifact, and returns a complete replacement artifact when needed.
 
 Parallax is deployed as a Next.js app on Vercel. The browser talks only to Vercel-hosted API routes; AWS credentials stay server-side in Vercel environment variables. DynamoDB stores chat thread state and artifact metadata, while S3 stores generated artifact payloads.
 
@@ -31,17 +31,20 @@ flowchart TD
 
   I --> M["User sends chat message"]
   M --> N["POST /api/agent mode: chat with userId + threadId"]
-  N --> O["Planner Agent"]
-  O -- normal chat --> P["Persist user + assistant messages in DynamoDB"]
+  N --> O["Guide Agent with Agents SDK Session"]
+  O -- normal chat --> P["Persist UI messages + SDK session items in DynamoDB"]
   P --> Q["Assistant reply in active thread"]
   O -- optional grounding --> OR["research_stem_topic tool"]
   OR --> O
-  O -- artifact needed --> LP["choose_lesson_plan tool"]
+  O -- artifact needed --> LP["build_learning_artifact tool"]
   LP --> BA["Builder Agent"]
   BA --> R["create_experience tool"]
   R --> S["Static artifact validation"]
-  S -- invalid --> T["Persist/display validation error"]
-  S -- valid --> U["Upload artifact HTML + sceneSource to S3"]
+  S -- valid --> CR["Critic Agent"]
+  CR -- repair needed --> BA
+  S -- invalid --> BA
+  CR -- blocked --> T["Persist/display build error"]
+  CR -- approved --> U["Upload artifact HTML + sceneSource to S3"]
   U --> V["Persist artifact metadata + assistant message in DynamoDB"]
   V --> W["Proposal card in active thread"]
 
@@ -52,10 +55,9 @@ flowchart TD
   Z --> AB["component_selected / walkthrough_step_changed events"]
   AB --> AA
   AA --> AC["POST /api/agent mode: learning_room with artifact context"]
-  AC --> TA["Tutor Agent"]
+  AC --> TA["Same Guide Agent with room context"]
   TA -- command useful --> AD["send_artifact_command tool"]
-  TA -- command useful --> AD["send_artifact_command tool"]
-  TA -- rebuild requested --> R
+  TA -- rebuild requested --> LP
   AD --> Z
   AC --> AE["Persist room user + assistant messages in DynamoDB"]
   AE --> AA
@@ -79,13 +81,15 @@ flowchart LR
   end
 
   subgraph Agents[OpenAI Agents SDK]
-    Planner[Planner Agent]
+    Guide[Guide Agent]
     Builder[Builder Agent]
-    Tutor[Tutor Agent]
-    PlanTool[choose_lesson_plan]
+    Critic[Critic Agent]
+    BuildTool[build_learning_artifact]
     CreateTool[create_experience]
+    CritiqueTool[critique_artifact]
     ResearchTool[research_stem_topic]
     CommandTool[send_artifact_command]
+    SDKSession[Agents SDK Session]
   end
 
   subgraph ArtifactRuntime[Fixed Artifact Runtime]
@@ -97,11 +101,15 @@ flowchart LR
 
   Chat --> AgentAPI
   Chat --> Store
-  AgentAPI --> Planner
-  Planner --> ResearchTool
-  Planner --> PlanTool
-  PlanTool --> Builder
+  AgentAPI --> Guide
+  Guide --> SDKSession
+  Guide --> ResearchTool
+  Guide --> CommandTool
+  Guide --> BuildTool
+  BuildTool --> Builder
   Builder --> CreateTool
+  BuildTool --> Critic
+  Critic --> CritiqueTool
   CreateTool --> Validator
   Validator --> Template
   Template --> Chat
@@ -110,9 +118,6 @@ flowchart LR
   Frame --> Three
   Frame --> Bridge
   Bridge --> Room
-  Room --> AgentAPI
-  AgentAPI --> Tutor
-  Tutor --> CommandTool
   CommandTool --> Bridge
 ```
 
@@ -125,7 +130,7 @@ flowchart LR
 | Amazon DynamoDB | Stores thread summaries, messages, and artifact metadata. | Vercel API routes |
 | Amazon S3 | Stores generated artifact `html` and `sceneSource` payloads. | Vercel API routes |
 | AWS IAM | Provides scoped access keys for Vercel functions. | Vercel environment variables |
-| OpenAI Agents SDK | Runs the Planner, Builder, and Tutor agents for lesson planning, artifact generation, and room control. | Vercel API routes |
+| OpenAI Agents SDK | Runs the Guide agent for live conversation, plus hidden Builder/Critic workers for artifact generation and QA. | Vercel API routes |
 
 
 ## Persistence Flow
@@ -141,20 +146,20 @@ flowchart LR
 ### Main Chat Message
 
 1. Browser posts to `POST /api/agent` with `mode: "chat"`, `userId`, `threadId`, and message history.
-2. Vercel function runs the Planner Agent with `research_stem_topic` and `choose_lesson_plan`.
-3. For normal chat, the Planner answers directly and the route writes user and assistant messages to DynamoDB.
-4. For an artifact request, the Planner chooses a `lessonMode`, writes a structured lesson plan, and optionally uses Exa through `research_stem_topic` for niche, current, patent, paper, product, or source-specific topics.
-5. Vercel function runs the Builder Agent with the lesson plan and `create_experience`.
-6. If artifact validation fails, the route persists/displays an assistant error message.
-7. If validation succeeds, the route writes the user message to DynamoDB, uploads artifact `html` and `sceneSource` to S3, writes artifact metadata to DynamoDB, and writes the assistant message with `artifactId` to DynamoDB.
+2. Vercel function runs the Guide Agent with an Agents SDK `Session` backed by the thread.
+3. For normal chat, the Guide answers directly. The route writes user-visible messages to DynamoDB, while the SDK session adapter stores model conversation items under the same thread partition.
+4. For an artifact request, the Guide calls `build_learning_artifact` with a complete lesson plan and may use Exa through `research_stem_topic` for niche, current, patent, paper, product, or source-specific topics.
+5. The `build_learning_artifact` tool runs the Builder Agent with `create_experience`, repairs once from validator feedback when possible, then runs the Critic Agent with `critique_artifact` and repairs once from critic feedback when needed.
+6. If the artifact remains invalid or unapproved, the route persists/displays an assistant error message.
+7. If validation and critique succeed, the route writes the user message to DynamoDB, uploads artifact `html` and `sceneSource` to S3, writes artifact metadata to DynamoDB, and writes the assistant message with `artifactId` to DynamoDB.
 
 ### Learning Room Message
 
 1. Browser posts to `POST /api/agent` with `mode: "learning_room"`, active artifact context, `userId`, and `threadId`.
-2. Vercel function runs the Tutor Agent with room-control tools and active artifact context, including `lessonMode`, `interactionGoal`, `controls`, `sources`, components, walkthrough steps, selected component, active step, and `sceneSource`.
+2. Vercel function runs the same Guide Agent with room-control tools and active artifact context, including `lessonMode`, `interactionGoal`, `controls`, `sources`, components, walkthrough steps, selected component, active step, and `sceneSource`.
 3. Assistant text, safe progress trace events, and any artifact commands return to the browser over the same SSE stream. Trace events summarize agent updates, reasoning-item milestones, and tool execution without exposing hidden chain-of-thought or large tool arguments.
-4. If the learner asks to rebuild or patch the scene, the Tutor creates a complete replacement artifact with `create_experience`; the browser switches the active room to that new artifact.
-5. User and assistant learning-room messages are persisted to DynamoDB with the relevant `artifactId`.
+4. If the learner asks to rebuild or patch the scene, the Guide calls `build_learning_artifact` to create a complete replacement artifact; the browser switches the active room to that new artifact.
+5. User and assistant learning-room messages are persisted to DynamoDB with the relevant `artifactId`, and the Agents SDK session adapter stores conversation history under the same thread.
 
 ### Thread Switching
 
@@ -194,24 +199,15 @@ Learning room chat sends:
 }
 ```
 
-The route uses different agent roles based on mode:
-
-- **Planner Agent**: runs first in main chat. It decides whether an artifact is needed, whether Exa grounding is useful, and which lesson mode best fits the request.
-- **Builder Agent**: runs only when the Planner chooses an artifact. It receives the structured lesson plan and must call `create_experience`.
-- **Tutor Agent**: runs in learning-room mode. It receives active artifact context and may call `send_artifact_command`. For explicit rebuild or patch requests, it may also call `create_experience` to create a complete replacement artifact.
-
-Main chat tools:
+Both payloads are handled by the **Guide Agent**. `mode` is UI context only: it tells the Guide whether an artifact is visible and which room state the user is looking at. It does not select a separate Planner or Tutor agent.
 
 - `research_stem_topic`: optional Exa-backed source grounding for niche, current, patent, paper, product, or source-specific topics.
-- `choose_lesson_plan`: structured Planner handoff with `artifactNeeded`, `lessonMode`, `interactionGoal`, `sources`, `requiredComponents`, and `builderBrief`.
-- `create_experience`: structured Builder handoff with artifact metadata, generated scene code, components, walkthrough steps, and optional controls.
-
-Learning-room tools:
-
+- `build_learning_artifact`: hidden artifact workflow. The Guide supplies a lesson plan; the tool runs Builder and Critic agents, validates the artifact contract, and returns either a complete artifact or an error.
 - `send_artifact_command`: emits typed artifact commands such as `focus_component`, `go_to_step`, `explode`, `collapse`, `reset_camera`, and `toggle_labels`.
-- `create_experience`: available for explicit rebuild or patch requests. It creates a replacement artifact; the app still does not support in-place scene editing.
 
-Main chat also includes latest artifact context when available, so rebuild follow-ups like "fix that scene" can be planned as replacement artifacts.
+The Builder Agent still uses the lower-level `create_experience` tool inside `build_learning_artifact`. The Critic Agent uses `critique_artifact` inside the same workflow. These lower-level tools are not exposed to the user-facing Guide as direct routing modes.
+
+Main chat also includes latest artifact context when available, so rebuild follow-ups like "fix that scene" can be planned as replacement artifacts. The app still does not support in-place scene editing.
 
 Tool parameter schemas are also part of the API boundary. Keep them within the JSON Schema subset accepted by OpenAI tool validation. When adding fields, preserve the existing normalization pattern: OpenAI-facing schemas can use nullable values where the SDK expects them, then route/tool code normalizes to the internal optional shape.
 
@@ -271,7 +267,7 @@ The parent sends commands back:
 - `collapse`
 - `toggle_labels`
 
-`go_to_step`, `start_walkthrough`, and `pause_walkthrough` are mainly useful for `guided_walkthrough` artifacts. `playground` artifacts are usually controlled by runtime-rendered sliders/toggles plus Tutor explanations and component focus commands.
+`go_to_step`, `start_walkthrough`, and `pause_walkthrough` are mainly useful for `guided_walkthrough` artifacts. `playground` artifacts are usually controlled by runtime-rendered sliders/toggles plus Guide explanations and component focus commands.
 
 ## DynamoDB Table
 
@@ -318,6 +314,17 @@ components
 walkthroughSteps
 learningOutcomes?
 ```
+
+Agents SDK session item:
+
+```txt
+PK = THREAD#<threadId>
+SK = AGENT_SESSION#<createdAt>#<sequence>#<itemId>
+entityType = agent_session_item
+item = <AgentInputItem>
+```
+
+Session item reads validate the caller owns the thread summary first. The UI-visible chat transcript remains stored as `MESSAGE#...` records; SDK session items preserve the model-facing conversation history used by `run(..., { session })`.
 
 ## S3 Bucket
 
@@ -374,6 +381,7 @@ The scoped IAM user for Vercel only needs DynamoDB access to the one table and S
     {
       "Effect": "Allow",
       "Action": [
+        "dynamodb:DeleteItem",
         "dynamodb:GetItem",
         "dynamodb:PutItem",
         "dynamodb:UpdateItem",
@@ -446,9 +454,11 @@ aws s3api put-public-access-block \
 - **One-shot artifacts**: v1 creates the best complete experience in one pass. Rebuild and patch requests create a new complete replacement artifact instead of editing an artifact in place.
 - **Sandboxed iframe**: generated code runs in an iframe with a strict `postMessage` bridge.
 - **Fixed runtime, generated scene**: the app owns labels, chrome, mode-aware controls, walkthrough UI, and validation.
-- **Adaptive lesson modes**: the Planner chooses between `playground` and `guided_walkthrough` instead of forcing every topic into a walkthrough.
-- **Planner, Builder, Tutor orchestration**: planning, artifact construction, and in-room teaching are separate Agents SDK roles with narrow tools.
-- **Planner-selected grounding**: Exa research is available to the Planner for patents, papers, current, niche, or source-specific topics, but ordinary STEM requests can proceed from model knowledge.
+- **Adaptive lesson modes**: the Guide chooses between `playground` and `guided_walkthrough` inside its artifact plan instead of forcing every topic into a walkthrough.
+- **Single user-facing Guide**: the Guide owns both chat and learning-room turns. `mode` remains in the payload for UI context, not for agent routing.
+- **Hidden artifact workers**: Builder and Critic agents run only inside `build_learning_artifact`, keeping artifact generation and QA specialized without splitting the user's live conversation.
+- **Guide-selected grounding**: Exa research is available to the Guide for patents, papers, current, niche, or source-specific topics, but ordinary STEM requests can proceed from model knowledge.
+- **Agents SDK Sessions**: threaded requests pass a `ThreadAgentSession` into `run()` so model-facing history is persisted separately from UI messages.
 - **Single agent endpoint**: `/api/agent` accepts a mode-discriminated payload instead of separate mode-specific routes.
 - **AWS-backed thread persistence**: DynamoDB stores thread summaries, messages, and artifact metadata; S3 stores generated artifact payloads.
 

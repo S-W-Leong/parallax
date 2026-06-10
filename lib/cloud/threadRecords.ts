@@ -1,3 +1,4 @@
+import type { AgentInputItem } from "@openai/agents";
 import type { ArtifactRecord, ChatMessage } from "@/lib/artifacts/artifactTypes";
 
 export type PersistedThreadSummary = {
@@ -52,6 +53,14 @@ export type ArtifactMetadataRecord = {
   createdAt: string;
 };
 
+export type AgentSessionItemRecord = {
+  PK: string;
+  SK: string;
+  entityType: "agent_session_item";
+  threadId: string;
+  item: AgentInputItem;
+};
+
 export function threadOwnerKey(userId: string): string {
   return `USER#${userId}`;
 }
@@ -70,6 +79,14 @@ export function messageKey(createdAt: string, messageId: string): string {
 
 export function artifactKey(artifactId: string): string {
   return `ARTIFACT#${artifactId}`;
+}
+
+export function agentSessionItemKey(createdAt: string, sequence: number, itemId: string): string {
+  return `AGENT_SESSION#${createdAt}#${sequence.toString().padStart(6, "0")}#${itemId}`;
+}
+
+export function agentSessionItemPrefix(): string {
+  return "AGENT_SESSION#";
 }
 
 export function artifactHtmlKey(threadId: string, artifactId: string): string {

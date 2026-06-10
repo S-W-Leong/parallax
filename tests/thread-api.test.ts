@@ -22,6 +22,10 @@ function mockStore(overrides: Partial<ThreadStore>): ThreadStore {
     archiveThread: vi.fn(),
     appendMessage: vi.fn(),
     saveArtifact: vi.fn(),
+    getAgentSessionItems: vi.fn(),
+    appendAgentSessionItems: vi.fn(),
+    popAgentSessionItem: vi.fn(),
+    clearAgentSession: vi.fn(),
     ...overrides,
   };
 }

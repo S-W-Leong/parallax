@@ -26,7 +26,7 @@ Tool mapping:
 
 ## What This Is
 
-Parallax is a Next.js (App Router) app for agent-generated interactive 3D STEM learning rooms. A user chats to request a topic; the OpenAI Agents SDK Orchestrator generates a **sandboxed Three.js artifact**; the user enters a learning room with the artifact iframe on the left and a Tutor agent chat on the right. The Tutor can drive the artifact (focus components, advance walkthrough steps) via a `postMessage` bridge.
+Parallax is a Next.js (App Router) app for agent-generated interactive 3D STEM learning rooms. A single user-facing OpenAI Agents SDK Guide Agent owns both the normal chat surface and the learning room. The Guide can answer directly, call hidden Builder/Critic artifact workers through `build_learning_artifact`, or drive the active artifact (focus components, advance walkthrough steps) via a `postMessage` bridge.
 
 ## Commands
 
@@ -45,9 +45,9 @@ There is no lint script. Playwright is a dev dependency but there is no configur
 
 ## Environment
 
-- `OPENAI_API_KEY` (required) -- without it both agent routes throw immediately (`requireOpenAiKey` in `lib/agent/routes.ts`).
+- `OPENAI_API_KEY` (required) -- without it the agent route throws immediately (`requireOpenAiKey` in `lib/agent/routes.ts`).
 - `OPENAI_MODEL` (optional, defaults to `gpt-5.4`).
-- `EXA_API_KEY` (optional) -- source grounding for the research tool; when absent/failing the Orchestrator continues from model knowledge.
+- `EXA_API_KEY` (optional) -- source grounding for the research tool; when absent/failing the Guide continues from model knowledge.
 
 ## Architecture
 
@@ -55,9 +55,9 @@ Full design notes live in `docs/parallax-architecture.md` (read it before changi
 
 ### Three Layers, Three Trust Boundaries
 
-1. **Browser UI** -- `components/app/ParallaxArtifactApp.tsx` is the root. State lives in a single `LearningSession` reducer (`lib/session/sessionReducer.ts`), persisted to LocalStorage (`lib/session/sessionStorage.ts`, `usePersistentSession.ts`). The session has two `mode`s: `chat` and `learning_room`.
-2. **Next.js API routes** -- `app/api/agent/chat/route.ts` and `app/api/agent/tutor/route.ts` are thin wrappers. All real logic is in `lib/agent/routes.ts` (`handleChatRoute`, `handleTutorRoute`), which is independently unit-testable.
-3. **OpenAI Agents SDK** -- `lib/agent/agents.ts` builds the Orchestrator and Tutor `Agent`s; prompts in `lib/agent/prompts.ts`. Each agent is constructed fresh per request with tools whose results are captured via a **sink** pattern (a closure that records the tool's structured result so the route can read it after `run()`).
+1. **Browser UI** -- `components/app/ParallaxArtifactApp.tsx` is the root. Thread state lives in `useThreadSession` plus a single `LearningSession` reducer (`lib/session/sessionReducer.ts`). The session still has two UI `mode`s, `chat` and `learning_room`, but those modes are context for the Guide rather than separate agent routes.
+2. **Next.js API routes** -- `app/api/agent/route.ts` is the single agent endpoint. All real logic is in `lib/agent/routes.ts` (`handleAgentRoute`, `handleAgentRouteStream`, with legacy wrapper helpers kept for tests/compatibility), which is independently unit-testable.
+3. **OpenAI Agents SDK** -- `lib/agent/agents.ts` builds the Guide plus hidden Builder/Critic workers; prompts live in `lib/agent/prompts.ts`. Threaded runs pass a `ThreadAgentSession` (`lib/agent/threadAgentSession.ts`) into `run(..., { session })`. Tools use a **sink** pattern (a closure that records the tool's structured result so the route can read it after `run()`).
 
 ### The Artifact Contract
 
@@ -74,12 +74,12 @@ The sandboxed iframe and parent communicate only through typed `postMessage`. Sc
 - Artifact to parent events: `artifact_ready`, `component_selected`, `walkthrough_step_changed`, `artifact_error`.
 - Parent to artifact commands: `focus_component`, `go_to_step`, `start_walkthrough`, `pause_walkthrough`, `reset_camera`, `explode`, `collapse`, `toggle_labels`.
 
-The Tutor's `send_artifact_command` tool emits these commands; the route returns them, the reducer enqueues them (`enqueue_commands` / `clear_pending_commands`), and `LearningRoom`/`ArtifactFrame` post them into the iframe. The learning-room agent can also call `create_experience` for rebuild/patch requests; those requests create a complete replacement artifact and the reducer swaps the active room to the new artifact.
+The Guide's `send_artifact_command` tool emits these commands; the route returns them, the reducer enqueues them (`enqueue_commands` / `clear_pending_commands`), and `LearningRoom`/`ArtifactFrame` post them into the iframe. For rebuild/patch requests, the Guide calls `build_learning_artifact`, which creates a complete replacement artifact and swaps the active room to the new artifact.
 
 ### Key Conventions
 
 - **Zod everywhere at boundaries.** `artifactTypes.ts` defines schemas used by both the tool input layer and runtime validation. Note the tool input schemas (`lib/agent/tools/*`) use `.nullable()` (the Agents SDK requires nullable over optional) and are then normalized to the internal `optional`/`undefined` shape -- see `normalizeToolInput` in `createExperienceTool.ts`. Follow that pattern when adding tool params.
-- **One-shot artifacts (v1).** The Orchestrator builds the complete experience in a single `create_experience` call; there is no in-place artifact editing. Rebuild/patch requests generate a complete replacement artifact instead.
+- **One-shot artifacts (v1).** The Builder builds the complete experience in a single `create_experience` call inside `build_learning_artifact`; there is no in-place artifact editing. Rebuild/patch requests generate a complete replacement artifact instead.
 - Path alias `@/*` maps to the repo root (configured in both `tsconfig.json` and `vitest.config.ts`).
 - TypeScript is `strict`. Dependencies are pinned to `latest` in `package.json`.
 
