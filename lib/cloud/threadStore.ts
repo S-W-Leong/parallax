@@ -48,6 +48,22 @@ async function bodyToString(body: unknown): Promise<string> {
   return (body as { transformToString: () => Promise<string> }).transformToString();
 }
 
+function removeUndefinedProperties<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefinedProperties) as T;
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entryValue]) => entryValue !== undefined)
+        .map(([entryKey, entryValue]) => [entryKey, removeUndefinedProperties(entryValue)]),
+    ) as T;
+  }
+
+  return value;
+}
+
 export class AwsThreadStore implements ThreadStore {
   constructor(
     private readonly options: {
@@ -244,12 +260,12 @@ export class AwsThreadStore implements ThreadStore {
       summary: artifact.summary,
       htmlS3Key,
       sceneSourceS3Key,
-      components: artifact.components,
-      walkthroughSteps: artifact.walkthroughSteps,
+      components: removeUndefinedProperties(artifact.components),
+      walkthroughSteps: removeUndefinedProperties(artifact.walkthroughSteps),
       createdAt: artifact.createdAt,
     };
     if (artifact.learningOutcomes !== undefined) {
-      record.learningOutcomes = artifact.learningOutcomes;
+      record.learningOutcomes = removeUndefinedProperties(artifact.learningOutcomes);
     }
 
     await this.options.dynamo.send(

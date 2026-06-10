@@ -28,6 +28,13 @@ const artifact: ArtifactRecord = {
   createdAt: "2026-06-09T14:01:00.000Z",
 };
 
+function hasNestedUndefined(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (Array.isArray(value)) return value.some(hasNestedUndefined);
+  if (value && typeof value === "object") return Object.values(value).some(hasNestedUndefined);
+  return false;
+}
+
 describe("awsConfig", () => {
   it("reads required AWS storage environment", () => {
     const config = readAwsStorageConfig({
@@ -387,5 +394,52 @@ describe("AwsThreadStore", () => {
     await store.saveArtifact("demo-1", "thread-1", artifact);
 
     expect(dynamo.send.mock.calls[1][0].input.Item).not.toHaveProperty("learningOutcomes");
+  });
+
+  it("removes nested undefined values from saved artifact metadata", async () => {
+    const dynamo = { send: vi.fn().mockResolvedValue({}) };
+    const s3 = { send: vi.fn().mockResolvedValue({}) };
+    const store = new AwsThreadStore({ dynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" });
+    const artifactWithUndefinedFields: ArtifactRecord = {
+      ...artifact,
+      components: [
+        {
+          id: "fan",
+          label: "Fan",
+          description: undefined,
+          metadata: {
+            role: "intake",
+            note: undefined,
+            nested: { keep: "yes", drop: undefined },
+            list: [{ name: "blade", value: undefined }],
+          },
+        },
+      ],
+      walkthroughSteps: [
+        {
+          id: "intro",
+          title: "Intro",
+          narration: "Start at the fan.",
+          targetComponentIds: ["fan"],
+          camera: {
+            position: undefined,
+            lookAt: [0, 0, 0],
+          },
+        },
+      ],
+      learningOutcomes: ["Trace airflow"],
+    };
+
+    await store.saveArtifact("demo-1", "thread-1", artifactWithUndefinedFields);
+
+    const item = dynamo.send.mock.calls[1][0].input.Item;
+    expect(hasNestedUndefined(item)).toBe(false);
+    expect(item.components[0]).not.toHaveProperty("description");
+    expect(item.components[0].metadata).not.toHaveProperty("note");
+    expect(item.components[0].metadata.nested).not.toHaveProperty("drop");
+    expect(item.components[0].metadata.list[0]).not.toHaveProperty("value");
+    expect(item.walkthroughSteps[0].camera).not.toHaveProperty("position");
+    expect(item.walkthroughSteps[0].camera.lookAt).toEqual([0, 0, 0]);
+    expect(item.learningOutcomes).toEqual(["Trace airflow"]);
   });
 });
