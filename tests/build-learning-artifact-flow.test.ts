@@ -125,6 +125,7 @@ setWalkthroughSteps([{ id: "intro", title: "Cell tour", narration: "Start with t
 });
 
 const { buildLearningArtifactFromPlan } = await import("@/lib/agent/tools/buildLearningArtifactTool");
+const { JET_ENGINE_DEMO_ARTIFACT, JET_ENGINE_DEMO_ARTIFACT_ID } = await import("@/lib/demo/jetEngineDemo");
 
 const plan: LessonPlan = {
   artifactNeeded: true,
@@ -168,6 +169,55 @@ describe("build learning artifact flow", () => {
       agentName: "Parallax Artifact Critic",
       maxTurns: 2,
     });
+  });
+
+  it("substitutes only the fixed jet engine 3D scene without running artifact agents", async () => {
+    const result = await buildLearningArtifactFromPlan({
+      ...plan,
+      title: "Tour a Turbofan Jet Engine",
+      topic: "jet engines",
+      rationale: "A guided tour helps learners follow airflow and energy transfer.",
+      interactionGoal: "Follow the airflow path and inspect the major rotating and hot-section components.",
+      requiredComponents: ["fan", "compressor", "combustor", "turbine", "nozzle", "shaft", "airflow"],
+      mechanismSpec: {
+        topic: "jet engines",
+        sourceClaims: [{ claim: "A turbofan compresses air, burns fuel, extracts turbine work, and accelerates exhaust.", sourceUrl: undefined }],
+        components: [
+          { id: "fan", label: "Fan", role: "Draws incoming air into the engine.", visualCues: ["large inlet blades"], spatialHints: ["front of engine"] },
+          { id: "compressor", label: "Compressor", role: "Raises air pressure before combustion.", visualCues: ["stacked blue stages"], spatialHints: ["after fan"] },
+          { id: "combustor", label: "Combustor", role: "Adds heat by burning fuel with compressed air.", visualCues: ["orange glowing chamber"], spatialHints: ["middle hot section"] },
+          { id: "turbine", label: "Turbine", role: "Extracts work from hot gas.", visualCues: ["gold blade rows"], spatialHints: ["behind combustor"] },
+          { id: "nozzle", label: "Nozzle", role: "Accelerates exhaust to create thrust.", visualCues: ["narrow rear cone"], spatialHints: ["rear exit"] },
+          { id: "shaft", label: "Shaft", role: "Transfers turbine work forward.", visualCues: ["central bright axle"], spatialHints: ["engine centerline"] },
+          { id: "airflow", label: "Airflow", role: "Shows the flow path through the engine.", visualCues: ["animated particles"], spatialHints: ["front to rear"] },
+        ],
+        relationships: [
+          { fromComponentId: "turbine", toComponentId: "shaft", relationship: "drives", explanation: "The turbine turns the shaft." },
+          { fromComponentId: "shaft", toComponentId: "compressor", relationship: "drives", explanation: "The shaft helps keep the compressor spinning." },
+        ],
+        flows: [
+          {
+            medium: "air and exhaust gas",
+            pathComponentIds: ["fan", "compressor", "combustor", "turbine", "nozzle"],
+            direction: "front to rear",
+            causeEffect: "Compression and heat addition increase gas energy before exhaust acceleration.",
+          },
+        ],
+        learnerInteractions: [{ type: "walkthrough_step", purpose: "Move through each engine stage." }],
+      },
+      builderBrief: "Build a guided jet engine tour.",
+    }, "Tour a jet engine");
+
+    expect(result).toMatchObject({
+      ok: true,
+      artifact: {
+        id: JET_ENGINE_DEMO_ARTIFACT_ID,
+        sceneSource: JET_ENGINE_DEMO_ARTIFACT.sceneSource,
+        html: JET_ENGINE_DEMO_ARTIFACT.html,
+      },
+    });
+    expect(result.trace).toContain("Using fixed jet engine 3D scene");
+    expect(agentRuns.calls).toEqual([]);
   });
 
   it("repairs validator failures introduced by a critic-requested playground rebuild", async () => {

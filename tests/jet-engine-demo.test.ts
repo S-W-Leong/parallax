@@ -2,20 +2,17 @@ import { describe, expect, it } from "vitest";
 import { artifactRecordSchema } from "@/lib/artifacts/artifactTypes";
 import { validateSceneSource } from "@/lib/artifacts/artifactValidator";
 import {
-  getJetEngineDemoTutorTurn,
   isJetEngineDemoArtifact,
   JET_ENGINE_DEMO_ARTIFACT,
   JET_ENGINE_DEMO_ARTIFACT_ID,
-  JET_ENGINE_DEMO_ID,
   STARTER_PROMPTS,
 } from "@/lib/demo/jetEngineDemo";
 
 describe("jet engine demo", () => {
-  it("marks only the first starter prompt as demo-triggered", () => {
+  it("keeps the jet engine starter prompt on the real Guide route", () => {
     expect(STARTER_PROMPTS[0]).toEqual({
       id: "jet-engine-demo",
       label: "Tour a jet engine",
-      demoId: JET_ENGINE_DEMO_ID,
     });
     expect(STARTER_PROMPTS.slice(1).map((prompt) => prompt.demoId)).toEqual([undefined, undefined, undefined]);
   });
@@ -98,19 +95,5 @@ describe("jet engine demo", () => {
     expect(isJetEngineDemoArtifact(JET_ENGINE_DEMO_ARTIFACT)).toBe(true);
     expect(isJetEngineDemoArtifact(null)).toBe(false);
     expect(isJetEngineDemoArtifact({ ...JET_ENGINE_DEMO_ARTIFACT, id: `${JET_ENGINE_DEMO_ARTIFACT_ID}-changed` })).toBe(false);
-  });
-
-  it("maps simple tutor requests to artifact commands", () => {
-    expect(getJetEngineDemoTutorTurn("show the combustor").commands).toEqual([
-      { type: "focus_component", componentId: "combustor" },
-      { type: "go_to_step", stepId: "combustor" },
-    ]);
-    expect(getJetEngineDemoTutorTurn("explode the view").commands).toEqual([{ type: "explode" }]);
-    expect(getJetEngineDemoTutorTurn("reset camera").commands).toEqual([{ type: "reset_camera" }]);
-    expect(getJetEngineDemoTutorTurn("walkthrough please").commands).toEqual([{ type: "start_walkthrough" }]);
-
-    const fallback = getJetEngineDemoTutorTurn("what am I looking at?");
-    expect(fallback.content).toContain("Air enters through the fan");
-    expect(fallback.commands).toEqual([]);
   });
 });

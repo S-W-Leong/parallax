@@ -54,7 +54,7 @@ export function ThreadSidebar({
           <span className="rail-logo" aria-hidden="true">
             <ParallaxLogo className="parallax-logo" />
           </span>
-          <span className="rail-label">Parallax</span>
+          <span className="rail-label">PARALLAX</span>
         </div>
         <div className="rail-actions">
           <button
