@@ -84,7 +84,7 @@ describe("agent tools", () => {
         },
       ],
       controls: [
-        { id: "displacement", type: "range", label: "Displacement", min: -2, max: 2, step: 0.1, value: 1 },
+        { id: "displacement", type: "range", label: "Displacement", min: -2, max: 2, step: 0.1, value: 1, enabled: null },
       ],
       learningOutcomes: null,
       sceneSource: `
@@ -132,6 +132,7 @@ setWalkthroughSteps([]);
     expect(serialized).not.toContain('"items":[{');
     expect(serialized).not.toContain("propertyNames");
     expect(serialized).not.toContain('"format":"uri"');
+    expect(serialized).not.toContain('"oneOf"');
   });
 
   it("records a structured lesson plan from the planner tool", async () => {

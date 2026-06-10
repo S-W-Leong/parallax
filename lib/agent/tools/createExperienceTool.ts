@@ -2,13 +2,42 @@ import { tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 import { createArtifactRecord, type CreateArtifactRecordResult } from "@/lib/artifacts/artifactValidator";
 import {
-  artifactControlSchema,
   artifactSourceSchema,
   lessonModeSchema,
   type CreateExperienceInput,
 } from "@/lib/artifacts/artifactTypes";
 
 const vector3Schema = z.array(z.number()).min(3).max(3);
+
+const artifactControlToolInputSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum(["range", "toggle"]),
+  label: z.string().min(1),
+  min: z.number().nullable(),
+  max: z.number().nullable(),
+  step: z.number().positive().nullable(),
+  value: z.number().nullable(),
+  enabled: z.boolean().nullable(),
+}).superRefine((control, ctx) => {
+  if (control.type === "range") {
+    if (control.min == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["min"], message: "Range controls require min." });
+    }
+    if (control.max == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["max"], message: "Range controls require max." });
+    }
+    if (control.step == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["step"], message: "Range controls require step." });
+    }
+    if (control.value == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["value"], message: "Range controls require value." });
+    }
+  }
+
+  if (control.type === "toggle" && control.enabled == null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["enabled"], message: "Toggle controls require enabled." });
+  }
+});
 
 const createExperienceToolInputSchema = z.object({
   topic: z.string().min(1),
@@ -17,7 +46,7 @@ const createExperienceToolInputSchema = z.object({
   lessonMode: lessonModeSchema.default("guided_walkthrough"),
   interactionGoal: z.string().min(1).nullable().optional(),
   sources: z.array(artifactSourceSchema).max(4).nullable().optional(),
-  controls: z.array(artifactControlSchema).max(6).nullable().optional(),
+  controls: z.array(artifactControlToolInputSchema).max(6).nullable().optional(),
   learningOutcomes: z.array(z.string().min(1).max(96)).min(1).max(3).nullable().optional(),
   sceneSource: z.string().min(1),
   components: z.array(z.object({
@@ -53,11 +82,34 @@ function normalizeToolInput(input: z.infer<typeof createExperienceToolInputSchem
     }
   }
 
+  function controls(value: z.infer<typeof artifactControlToolInputSchema>[] | null | undefined): CreateExperienceInput["controls"] {
+    return value?.map((control) => {
+      if (control.type === "toggle") {
+        return {
+          id: control.id,
+          type: "toggle",
+          label: control.label,
+          value: Boolean(control.enabled),
+        };
+      }
+
+      return {
+        id: control.id,
+        type: "range",
+        label: control.label,
+        min: control.min ?? 0,
+        max: control.max ?? 1,
+        step: control.step ?? 1,
+        value: control.value ?? 0,
+      };
+    });
+  }
+
   return {
     ...input,
     interactionGoal: input.interactionGoal ?? undefined,
     sources: input.sources ?? undefined,
-    controls: input.controls ?? undefined,
+    controls: controls(input.controls),
     learningOutcomes: input.learningOutcomes ?? undefined,
     components: input.components.map((component) => ({
       id: component.id,

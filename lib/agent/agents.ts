@@ -1,7 +1,6 @@
 import { Agent, type Tool } from "@openai/agents";
 import {
   BUILDER_AGENT_PROMPT,
-  PARALLAX_AGENT_PROMPT,
   PLANNER_AGENT_PROMPT,
   TUTOR_AGENT_PROMPT,
 } from "./prompts";
@@ -31,15 +30,6 @@ export function makeTutorAgent(tools: Tool[]) {
     name: "Parallax Tutor",
     model,
     instructions: TUTOR_AGENT_PROMPT,
-    tools,
-  });
-}
-
-export function makeParallaxAgent(tools: Tool[]) {
-  return new Agent({
-    name: "Parallax",
-    model,
-    instructions: PARALLAX_AGENT_PROMPT,
     tools,
   });
 }
