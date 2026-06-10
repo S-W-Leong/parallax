@@ -83,7 +83,7 @@ export function LearningRoom({
             <h2>{selectedComponent ? selectedComponent.label : artifact.topic}</h2>
           </div>
           <div className="toolbar-actions">
-            <button className="icon-button" onClick={onResetSession} disabled={busy} aria-label="Start new chat" title="Start new chat">
+            <button className="icon-button" onClick={onResetSession} aria-label="Start new chat" title="Start new chat">
               <RefreshCcw size={18} />
             </button>
             <button className="icon-button" onClick={onExit} aria-label="Exit experience" title="Exit experience">

@@ -2,19 +2,23 @@
 
 import { useRef, useState } from "react";
 import { Menu } from "lucide-react";
-import type { ArtifactCommand, ArtifactRecord, SelectedComponent } from "@/lib/artifacts/artifactTypes";
+import type { ArtifactRecord, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 import { decodeAgentStreamEvents, type AgentStreamEvent } from "@/lib/agent/streamProtocol";
 import { ParallaxLogo } from "@/components/brand/ParallaxLogo";
 import { ChatHome } from "@/components/app/ChatHome";
 import { ThreadSidebar } from "@/components/chat/ThreadSidebar";
 import { LearningRoom } from "@/components/experience/LearningRoom";
+import type { SessionAction } from "@/lib/session/sessionReducer";
 import { useThreadSession } from "@/lib/session/useThreadSession";
 
 type PendingRequest = {
   id: string;
+  threadId: string;
   draftId: string;
   controller: AbortController;
 };
+
+type PendingRequestsByThreadId = Record<string, PendingRequest>;
 
 type AppShellClassOptions = {
   sidebarExpanded: boolean;
@@ -35,24 +39,56 @@ function isAbortError(error: unknown): boolean {
 }
 
 export function ParallaxArtifactApp() {
-  const { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread, refreshThreads } =
-    useThreadSession();
-  const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null);
+  const {
+    userId,
+    activeThreadId,
+    threads,
+    state,
+    dispatch,
+    dispatchToThread,
+    getThreadSession,
+    hydrated,
+    createThread,
+    selectThread,
+    archiveThread,
+    refreshThreads,
+  } = useThreadSession();
+  const [pendingRequestsByThreadId, setPendingRequestsByThreadId] = useState<PendingRequestsByThreadId>({});
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const [sidebarHoverExpanded, setSidebarHoverExpanded] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const pendingRequestRef = useRef<PendingRequest | null>(null);
-  const busy = Boolean(pendingRequest);
+  const pendingRequestsRef = useRef<PendingRequestsByThreadId>({});
+  const activePendingRequest = activeThreadId ? pendingRequestsByThreadId[activeThreadId] : null;
+  const busy = Boolean(activePendingRequest);
+  const runningThreadIds = new Set(Object.keys(pendingRequestsByThreadId));
   const activeArtifact = state.activeArtifactId ? state.artifacts[state.activeArtifactId] : null;
   const sidebarExpanded = sidebarPinned || sidebarHoverExpanded;
 
-  function stopResponse() {
-    const activeRequest = pendingRequestRef.current;
+  function storePendingRequest(request: PendingRequest) {
+    const next = { ...pendingRequestsRef.current, [request.threadId]: request };
+    pendingRequestsRef.current = next;
+    setPendingRequestsByThreadId(next);
+  }
+
+  function clearPendingRequest(threadId: string, requestId: string) {
+    const activeRequest = pendingRequestsRef.current[threadId];
+    if (activeRequest?.id !== requestId) return;
+    const { [threadId]: _removed, ...next } = pendingRequestsRef.current;
+    pendingRequestsRef.current = next;
+    setPendingRequestsByThreadId(next);
+  }
+
+  function stopThreadResponse(threadId: string) {
+    const activeRequest = pendingRequestsRef.current[threadId];
     if (!activeRequest) return;
     activeRequest.controller.abort();
-    dispatch({ type: "assistant_draft_stopped", id: activeRequest.draftId });
-    pendingRequestRef.current = null;
-    setPendingRequest(null);
+    dispatchToThread(threadId, { type: "assistant_draft_stopped", id: activeRequest.draftId });
+    clearPendingRequest(threadId, activeRequest.id);
+  }
+
+  function stopResponse() {
+    if (!activeThreadId) return;
+    stopThreadResponse(activeThreadId);
   }
 
   function processStreamEvent(
@@ -60,10 +96,11 @@ export function ParallaxArtifactApp() {
     draftId: string,
     artifactId: string | undefined,
     streamState: { hasDelta: boolean; errorShown: boolean },
+    dispatchAction: (action: SessionAction) => void,
   ) {
     if (event.type === "status") {
       if (!streamState.hasDelta) {
-        dispatch({ type: "assistant_draft_replaced", id: draftId, content: event.message });
+        dispatchAction({ type: "assistant_draft_replaced", id: draftId, content: event.message });
       }
       return;
     }
@@ -71,21 +108,21 @@ export function ParallaxArtifactApp() {
     if (event.type === "delta") {
       if (!streamState.hasDelta) {
         streamState.hasDelta = true;
-        dispatch({ type: "assistant_draft_replaced", id: draftId, content: event.delta });
+        dispatchAction({ type: "assistant_draft_replaced", id: draftId, content: event.delta });
       } else {
-        dispatch({ type: "assistant_draft_delta", id: draftId, delta: event.delta });
+        dispatchAction({ type: "assistant_draft_delta", id: draftId, delta: event.delta });
       }
       return;
     }
 
     if (event.type === "trace") {
-      dispatch({ type: "assistant_trace_event", id: draftId, entry: event.entry });
+      dispatchAction({ type: "assistant_trace_event", id: draftId, entry: event.entry });
       return;
     }
 
     if (event.type === "error") {
       streamState.errorShown = true;
-      dispatch({ type: "system_event", content: event.message, artifactId });
+      dispatchAction({ type: "system_event", content: event.message, artifactId });
       return;
     }
 
@@ -93,24 +130,24 @@ export function ParallaxArtifactApp() {
       const errorContent = event.message || event.error;
       if (!streamState.errorShown) {
         streamState.errorShown = true;
-        dispatch({ type: "system_event", content: event.error, artifactId });
+        dispatchAction({ type: "system_event", content: event.error, artifactId });
       }
-      dispatch({ type: "assistant_draft_completed", id: draftId, content: errorContent, artifactId });
+      dispatchAction({ type: "assistant_draft_completed", id: draftId, content: errorContent, artifactId });
       return;
     }
 
     if (event.artifact) {
-      dispatch({ type: "artifact_attached_to_message", id: draftId, artifact: event.artifact, trace: event.trace, content: event.message });
+      dispatchAction({ type: "artifact_attached_to_message", id: draftId, artifact: event.artifact, trace: event.trace, content: event.message });
     } else {
-      dispatch({ type: "assistant_draft_completed", id: draftId, content: event.message, artifactId });
+      dispatchAction({ type: "assistant_draft_completed", id: draftId, content: event.message, artifactId });
     }
 
     if (event.commands.length) {
-      dispatch({ type: "enqueue_commands", commands: event.commands });
+      dispatchAction({ type: "enqueue_commands", commands: event.commands });
     }
   }
 
-  async function readAgentStream(response: Response, draftId: string, artifactId: string | undefined, signal: AbortSignal) {
+  async function readAgentStream(response: Response, threadId: string, draftId: string, artifactId: string | undefined, signal: AbortSignal) {
     if (!response.ok) {
       const data = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
       throw new Error(data?.error ?? data?.message ?? response.statusText);
@@ -134,14 +171,14 @@ export function ParallaxArtifactApp() {
         const completeBlocks = buffer.slice(0, lastBoundary + 2);
         buffer = buffer.slice(lastBoundary + 2);
         for (const event of decodeAgentStreamEvents(completeBlocks)) {
-          processStreamEvent(event, draftId, artifactId, streamState);
+          processStreamEvent(event, draftId, artifactId, streamState, (action) => dispatchToThread(threadId, action));
         }
       }
 
       buffer += decoder.decode();
       if (buffer.trim() && !signal.aborted) {
         for (const event of decodeAgentStreamEvents(buffer)) {
-          processStreamEvent(event, draftId, artifactId, streamState);
+          processStreamEvent(event, draftId, artifactId, streamState, (action) => dispatchToThread(threadId, action));
         }
       }
     } finally {
@@ -150,33 +187,27 @@ export function ParallaxArtifactApp() {
   }
 
   async function streamAgentMessage(options: {
+    threadId: string;
     message: string;
     mode: "chat" | "learning_room";
     body: Record<string, unknown>;
     artifactId?: string;
     initialDraft: string;
   }) {
-    if (pendingRequestRef.current) return;
+    if (pendingRequestsRef.current[options.threadId]) return;
 
     const requestId = makeClientId("request");
     const draftId = makeClientId("draft");
     const controller = new AbortController();
 
-    dispatch({ type: "user_message", content: options.message });
-    dispatch({ type: "assistant_draft_started", id: draftId, content: options.initialDraft, artifactId: options.artifactId });
-    const request = { id: requestId, draftId, controller };
-    pendingRequestRef.current = request;
-    setPendingRequest(request);
-
-    function clearCurrentRequest() {
-      if (pendingRequestRef.current?.id === requestId) {
-        pendingRequestRef.current = null;
-      }
-      setPendingRequest((current) => {
-        if (current?.id !== requestId) return current;
-        return null;
-      });
-    }
+    dispatchToThread(options.threadId, { type: "user_message", content: options.message });
+    dispatchToThread(options.threadId, {
+      type: "assistant_draft_started",
+      id: draftId,
+      content: options.initialDraft,
+      artifactId: options.artifactId,
+    });
+    storePendingRequest({ id: requestId, threadId: options.threadId, draftId, controller });
 
     try {
       const response = await fetch("/api/agent", {
@@ -185,56 +216,63 @@ export function ParallaxArtifactApp() {
         body: JSON.stringify({ ...options.body, mode: options.mode, stream: true }),
         signal: controller.signal,
       });
-      await readAgentStream(response, draftId, options.artifactId, controller.signal);
-      clearCurrentRequest();
+      await readAgentStream(response, options.threadId, draftId, options.artifactId, controller.signal);
     } catch (error) {
       if (isAbortError(error) || controller.signal.aborted) {
-        dispatch({ type: "assistant_draft_stopped", id: draftId });
+        dispatchToThread(options.threadId, { type: "assistant_draft_stopped", id: draftId });
       } else {
-        dispatch({ type: "assistant_draft_stopped", id: draftId });
-        dispatch({
+        dispatchToThread(options.threadId, { type: "assistant_draft_stopped", id: draftId });
+        dispatchToThread(options.threadId, {
           type: "system_event",
           content: error instanceof Error ? error.message : "Unknown agent error",
           artifactId: options.artifactId,
         });
       }
     } finally {
-      clearCurrentRequest();
+      clearPendingRequest(options.threadId, requestId);
+      void refreshThreads();
     }
   }
 
   async function sendChatMessage(message: string) {
+    if (!activeThreadId) return;
+    const threadId = activeThreadId;
+    const activeSession = getThreadSession(threadId) ?? state;
     await streamAgentMessage({
+      threadId,
       message,
       mode: "chat",
       initialDraft: "Let me think this through...",
       body: {
-        threadId: activeThreadId,
+        threadId,
         userId,
         message,
-        messages: state.messages,
-        artifacts: state.artifacts,
-        activeArtifactId: state.activeArtifactId,
-        lastArtifactId: state.lastArtifactId,
+        messages: activeSession.messages,
+        artifacts: activeSession.artifacts,
+        activeArtifactId: activeSession.activeArtifactId,
+        lastArtifactId: activeSession.lastArtifactId,
       },
     });
   }
 
   async function sendLearningRoomMessage(message: string) {
-    if (!activeArtifact) return;
+    if (!activeArtifact || !activeThreadId) return;
+    const threadId = activeThreadId;
+    const activeSession = getThreadSession(threadId) ?? state;
     await streamAgentMessage({
+      threadId,
       message,
       mode: "learning_room",
       artifactId: activeArtifact.id,
       initialDraft: "Thinking...",
       body: {
-        threadId: activeThreadId,
+        threadId,
         userId,
         message,
         artifact: activeArtifact,
-        messages: state.messages,
-        selectedComponent: state.selectedComponent,
-        activeStepId: state.activeStepId,
+        messages: activeSession.messages,
+        selectedComponent: activeSession.selectedComponent,
+        activeStepId: activeSession.activeStepId,
       },
     });
   }
@@ -248,22 +286,19 @@ export function ParallaxArtifactApp() {
   }
 
   function resetSession() {
-    if (pendingRequestRef.current) return;
     void createThread();
   }
 
   function createThreadIfIdle() {
-    if (pendingRequestRef.current) return;
     void createThread();
   }
 
   function selectThreadIfIdle(threadId: string) {
-    if (pendingRequestRef.current) stopResponse();
     void selectThread(threadId);
   }
 
   function archiveThreadIfIdle(threadId: string) {
-    if (pendingRequestRef.current) return;
+    if (pendingRequestsRef.current[threadId]) return;
     void archiveThread(threadId);
   }
 
@@ -289,7 +324,7 @@ export function ParallaxArtifactApp() {
           activeThreadId={activeThreadId}
           pinned={sidebarPinned}
           mobileOpen={mobileSidebarOpen}
-          actionsDisabled={busy}
+          runningThreadIds={runningThreadIds}
           onTogglePinned={() => setSidebarPinned((value) => !value)}
           onExpandedChange={setSidebarHoverExpanded}
           onCloseMobile={() => setMobileSidebarOpen(false)}
@@ -331,7 +366,7 @@ export function ParallaxArtifactApp() {
         activeThreadId={activeThreadId}
         pinned={sidebarPinned}
         mobileOpen={mobileSidebarOpen}
-        actionsDisabled={busy}
+        runningThreadIds={runningThreadIds}
         onTogglePinned={() => setSidebarPinned((value) => !value)}
         onExpandedChange={setSidebarHoverExpanded}
         onCloseMobile={() => setMobileSidebarOpen(false)}

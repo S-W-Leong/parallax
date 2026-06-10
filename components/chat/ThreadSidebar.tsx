@@ -10,6 +10,7 @@ type ThreadSidebarProps = {
   pinned: boolean;
   mobileOpen: boolean;
   actionsDisabled?: boolean;
+  runningThreadIds?: ReadonlySet<string>;
   onTogglePinned: () => void;
   onCloseMobile: () => void;
   onExpandedChange: (expanded: boolean) => void;
@@ -17,6 +18,8 @@ type ThreadSidebarProps = {
   onSelectThread: (threadId: string) => void;
   onArchiveThread: (threadId: string) => void;
 };
+
+const EMPTY_RUNNING_THREAD_IDS = new Set<string>();
 
 function formatThreadDate(value: string): string {
   const date = new Date(value);
@@ -30,6 +33,7 @@ export function ThreadSidebar({
   pinned,
   mobileOpen,
   actionsDisabled = false,
+  runningThreadIds = EMPTY_RUNNING_THREAD_IDS,
   onTogglePinned,
   onCloseMobile,
   onExpandedChange,
@@ -80,6 +84,7 @@ export function ThreadSidebar({
       <nav aria-label="Chat threads">
         {threads.map((thread) => {
           const isActive = thread.id === activeThreadId;
+          const isRunning = runningThreadIds.has(thread.id);
           return (
             <div className={isActive ? "thread-item active" : "thread-item"} key={thread.id}>
               <button
@@ -95,7 +100,7 @@ export function ThreadSidebar({
                 <MessageSquare className="thread-icon" size={17} aria-hidden="true" />
                 <span className="thread-labels">
                   <span>{thread.title}</span>
-                  <small>{formatThreadDate(thread.updatedAt)}</small>
+                  {isRunning ? <span className="thread-running-indicator">Generating</span> : <small>{formatThreadDate(thread.updatedAt)}</small>}
                 </span>
               </button>
               <button
@@ -106,7 +111,7 @@ export function ThreadSidebar({
                   onArchiveThread(thread.id);
                   onCloseMobile();
                 }}
-                disabled={actionsDisabled}
+                disabled={actionsDisabled || isRunning}
                 aria-label={`Archive ${thread.title}`}
                 title="Archive"
               >

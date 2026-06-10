@@ -19,14 +19,14 @@ const threads: PersistedThreadSummary[] = [
 ];
 
 describe("ThreadSidebar", () => {
-  it("keeps thread selection available while create and archive actions are disabled", () => {
+  it("keeps new chat and thread selection available while a thread is generating", () => {
     const html = renderToStaticMarkup(
       <ThreadSidebar
         threads={threads}
         activeThreadId="thread-1"
         pinned={true}
         mobileOpen={false}
-        actionsDisabled={true}
+        runningThreadIds={new Set(["thread-1"])}
         onTogglePinned={vi.fn()}
         onCloseMobile={vi.fn()}
         onExpandedChange={vi.fn()}
@@ -36,8 +36,10 @@ describe("ThreadSidebar", () => {
       />,
     );
 
-    expect(html).toContain('aria-label="New chat"');
-    expect(html).toContain('aria-label="Archive Build a DNA room"');
+    expect(html).toContain('<button class="icon-button" type="button" aria-label="New chat" title="New chat">');
+    expect(html).toContain('<span class="thread-running-indicator">Generating</span>');
+    expect(html).toContain('<button class="icon-button archive-thread-button" type="button" disabled="" aria-label="Archive Build a DNA room"');
+    expect(html).toContain('<button class="icon-button archive-thread-button" type="button" aria-label="Archive Quiz me on cells"');
     expect(html).toContain('<button class="thread-select" type="button" aria-current="page" title="Build a DNA room">');
     expect(html).toContain('<button class="thread-select" type="button" title="Quiz me on cells">');
   });
