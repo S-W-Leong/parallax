@@ -71,9 +71,13 @@ export function ParallaxArtifactApp() {
       return;
     }
 
-    if (event.error && !streamState.errorShown) {
-      streamState.errorShown = true;
-      dispatch({ type: "system_event", content: event.error, artifactId });
+    if (event.error) {
+      if (!streamState.errorShown) {
+        streamState.errorShown = true;
+        dispatch({ type: "system_event", content: event.error, artifactId });
+      }
+      dispatch({ type: "assistant_draft_stopped", id: draftId });
+      return;
     }
 
     if (event.artifact) {
