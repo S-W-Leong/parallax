@@ -13,4 +13,10 @@ describe("agent prompts", () => {
     expect(CRITIC_AGENT_PROMPT).toContain("overlapping runtime labels");
     expect(CRITIC_AGENT_PROMPT).toContain("labelOffset");
   });
+
+  it("keeps the critic focused on fast blocker-only review", () => {
+    expect(CRITIC_AGENT_PROMPT).toContain("fast QA pass");
+    expect(CRITIC_AGENT_PROMPT).toContain("Approve by default");
+    expect(CRITIC_AGENT_PROMPT).toContain("Block only");
+  });
 });

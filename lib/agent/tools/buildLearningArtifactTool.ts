@@ -123,7 +123,7 @@ function makeCriticPrompt(plan: LessonPlan, artifact: ArtifactRecord, requestMes
 async function critiqueArtifact(plan: LessonPlan, artifact: ArtifactRecord, requestMessage: string) {
   const critiqueSink = makeArtifactCritiqueToolSink();
   const criticAgent = makeCriticAgent([critiqueSink.tool]);
-  await run(criticAgent, makeCriticPrompt(plan, artifact, requestMessage), { maxTurns: 4 });
+  await run(criticAgent, makeCriticPrompt(plan, artifact, requestMessage), { maxTurns: 2 });
 
   const critique = critiqueSink.getResult();
   if (!critique) {
@@ -298,8 +298,8 @@ export async function buildLearningArtifactFromPlan(
       label: "Repairing artifact from critic feedback",
     });
     createExperience.clearResult();
-    const retryResult = await run(builderAgent, makeBuilderPrompt(plan, requestMessage, { critic: critique.critique }), { maxTurns: 8 });
-    const retryArtifactResult = createExperience.getResult();
+    let retryResult = await run(builderAgent, makeBuilderPrompt(plan, requestMessage, { critic: critique.critique }), { maxTurns: 8 });
+    let retryArtifactResult = createExperience.getResult();
 
     if (!retryArtifactResult) {
       const error = missingCreateExperienceErrorMessage(plan);
@@ -321,7 +321,42 @@ export async function buildLearningArtifactFromPlan(
         ok: false,
         detail: retryArtifactResult.error,
       });
-      return { ok: false, message: retryArtifactResult.error, trace, error: retryArtifactResult.error };
+      trace.push("Repairing artifact from validator feedback");
+      emitActivity(options, {
+        type: "phase.started",
+        phase: "artifact.build",
+        label: "Repairing artifact from validator feedback",
+      });
+      createExperience.clearResult();
+      retryResult = await run(
+        builderAgent,
+        makeBuilderPrompt(plan, requestMessage, { critic: critique.critique, validatorError: retryArtifactResult.error }),
+        { maxTurns: 8 },
+      );
+      retryArtifactResult = createExperience.getResult();
+
+      if (!retryArtifactResult) {
+        const error = missingCreateExperienceErrorMessage(plan);
+        emitActivity(options, {
+          type: "phase.completed",
+          phase: "artifact.build",
+          label: "Artifact repair failed",
+          ok: false,
+          detail: error,
+        });
+        return { ok: false, message: error, trace, error };
+      }
+
+      if (!retryArtifactResult.ok) {
+        emitActivity(options, {
+          type: "phase.completed",
+          phase: "artifact.validate",
+          label: "Repaired artifact validation failed",
+          ok: false,
+          detail: retryArtifactResult.error,
+        });
+        return { ok: false, message: retryArtifactResult.error, trace, error: retryArtifactResult.error };
+      }
     }
 
     trace.push("Re-reviewing artifact accuracy");

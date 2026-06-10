@@ -32,7 +32,6 @@ export function ChatThread({ messages, artifacts, trace, onEnterExperience, show
   if (!messages.length) {
     return (
       <div className="empty-thread">
-        <p className="eyebrow">Parallax</p>
         <h1>What should we explore?</h1>
       </div>
     );
