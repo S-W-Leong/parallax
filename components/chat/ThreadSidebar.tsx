@@ -6,6 +6,7 @@ import type { PersistedThreadSummary } from "@/lib/cloud/threadRecords";
 type ThreadSidebarProps = {
   threads: PersistedThreadSummary[];
   activeThreadId: string | null;
+  actionsDisabled?: boolean;
   onCreateThread: () => void;
   onSelectThread: (threadId: string) => void;
   onArchiveThread: (threadId: string) => void;
@@ -17,12 +18,12 @@ function formatThreadDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
 }
 
-export function ThreadSidebar({ threads, activeThreadId, onCreateThread, onSelectThread, onArchiveThread }: ThreadSidebarProps) {
+export function ThreadSidebar({ threads, activeThreadId, actionsDisabled = false, onCreateThread, onSelectThread, onArchiveThread }: ThreadSidebarProps) {
   return (
     <aside className="thread-sidebar">
       <header>
         <div className="lab-mark">Parallax</div>
-        <button className="icon-button" type="button" onClick={onCreateThread} aria-label="New chat" title="New chat">
+        <button className="icon-button" type="button" onClick={onCreateThread} disabled={actionsDisabled} aria-label="New chat" title="New chat">
           <MessageSquarePlus size={18} />
         </button>
       </header>
@@ -31,7 +32,12 @@ export function ThreadSidebar({ threads, activeThreadId, onCreateThread, onSelec
           const isActive = thread.id === activeThreadId;
           return (
             <div className={isActive ? "thread-item active" : "thread-item"} key={thread.id}>
-              <button type="button" onClick={() => onSelectThread(thread.id)} aria-current={isActive ? "page" : undefined}>
+              <button
+                type="button"
+                onClick={() => onSelectThread(thread.id)}
+                disabled={actionsDisabled}
+                aria-current={isActive ? "page" : undefined}
+              >
                 <span>{thread.title}</span>
                 <small>{formatThreadDate(thread.updatedAt)}</small>
               </button>
@@ -42,6 +48,7 @@ export function ThreadSidebar({ threads, activeThreadId, onCreateThread, onSelec
                   event.stopPropagation();
                   onArchiveThread(thread.id);
                 }}
+                disabled={actionsDisabled}
                 aria-label={`Archive ${thread.title}`}
                 title="Archive"
               >

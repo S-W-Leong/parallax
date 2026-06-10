@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Activity, CheckCircle2, Cpu, History, MessageSquare } from "lucide-react";
 import type { ArtifactCommand, ArtifactRecord, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 import { decodeAgentStreamEvents, type AgentStreamEvent } from "@/lib/agent/streamProtocol";
@@ -29,6 +29,7 @@ function isAbortError(error: unknown): boolean {
 export function ParallaxArtifactApp() {
   const { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread } = useThreadSession();
   const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null);
+  const pendingRequestRef = useRef<PendingRequest | null>(null);
   const busy = Boolean(pendingRequest);
   const activeArtifact = state.activeArtifactId ? state.artifacts[state.activeArtifactId] : null;
   const lastArtifact = state.lastArtifactId ? state.artifacts[state.lastArtifactId] : null;
@@ -36,9 +37,11 @@ export function ParallaxArtifactApp() {
   const chatShellClass = useMemo(() => (lastArtifact ? "chat-shell has-preview" : "chat-shell"), [lastArtifact]);
 
   function stopResponse() {
-    if (!pendingRequest) return;
-    pendingRequest.controller.abort();
-    dispatch({ type: "assistant_draft_stopped", id: pendingRequest.draftId });
+    const activeRequest = pendingRequestRef.current;
+    if (!activeRequest) return;
+    activeRequest.controller.abort();
+    dispatch({ type: "assistant_draft_stopped", id: activeRequest.draftId });
+    pendingRequestRef.current = null;
     setPendingRequest(null);
   }
 
@@ -145,7 +148,9 @@ export function ParallaxArtifactApp() {
 
     dispatch({ type: "user_message", content: options.message });
     dispatch({ type: "assistant_draft_started", id: draftId, content: options.initialDraft, artifactId: options.artifactId });
-    setPendingRequest({ id: requestId, draftId, controller });
+    const request = { id: requestId, draftId, controller };
+    pendingRequestRef.current = request;
+    setPendingRequest(request);
 
     try {
       const response = await fetch("/api/agent", {
@@ -167,7 +172,11 @@ export function ParallaxArtifactApp() {
         });
       }
     } finally {
-      setPendingRequest((current) => (current?.id === requestId ? null : current));
+      setPendingRequest((current) => {
+        if (current?.id !== requestId) return current;
+        pendingRequestRef.current = null;
+        return null;
+      });
     }
   }
 
@@ -208,7 +217,23 @@ export function ParallaxArtifactApp() {
   }
 
   function resetSession() {
+    if (pendingRequestRef.current) return;
     void createThread();
+  }
+
+  function createThreadIfIdle() {
+    if (pendingRequestRef.current) return;
+    void createThread();
+  }
+
+  function selectThreadIfIdle(threadId: string) {
+    if (pendingRequestRef.current) return;
+    void selectThread(threadId);
+  }
+
+  function archiveThreadIfIdle(threadId: string) {
+    if (pendingRequestRef.current) return;
+    void archiveThread(threadId);
   }
 
   if (!hydrated) {
@@ -250,9 +275,10 @@ export function ParallaxArtifactApp() {
       <ThreadSidebar
         threads={threads}
         activeThreadId={activeThreadId}
-        onCreateThread={() => void createThread()}
-        onSelectThread={(threadId) => void selectThread(threadId)}
-        onArchiveThread={(threadId) => void archiveThread(threadId)}
+        actionsDisabled={busy}
+        onCreateThread={createThreadIfIdle}
+        onSelectThread={selectThreadIfIdle}
+        onArchiveThread={archiveThreadIfIdle}
       />
 
       <section className="console-main" id="console">
