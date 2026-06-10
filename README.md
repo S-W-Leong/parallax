@@ -1,126 +1,84 @@
 # Parallax
 
-Parallax is a chat-first Next.js app for agent-generated interactive 3D STEM learning rooms. A learner asks for a topic in plain language, the OpenAI Agents SDK plans a learning experience, optionally grounds it with Exa research, and creates a sandboxed Three.js artifact with clickable components, a guided walkthrough, and a room-aware Tutor chat.
+Parallax turns a plain chat request into an interactive 3D STEM learning room.
 
-The core bet: an agent should be able to author a complete interactive 3D learning room from a normal chat request, then keep teaching inside that room by using the learner's selected component and active walkthrough step as context.
+Ask for a topic in everyday language — "show me how a piston engine works" or "help me understand a water molecule" — and Parallax builds you a hands-on 3D scene to explore, with an AI tutor sitting right next to it to walk you through it.
 
-## What It Does
+## The Problem
 
-- Starts in a threaded chat interface for asking STEM questions or requesting 3D learning rooms.
-- Generates self-contained Three.js artifacts through a fixed Parallax runtime instead of letting the model emit a full web page.
-- Validates generated scene JavaScript before it runs, rejecting unsafe markup, network APIs, dynamic imports, syntax errors, and incomplete artifact contracts.
-- Presents validated artifacts as proposal cards with learning outcomes, walkthrough steps, and interactive components.
-- Opens a learning room with the artifact iframe on the left and a Tutor chat on the right.
-- Lets the Tutor send typed commands to the artifact: focus a component, go to a step, start or pause walkthroughs, explode or collapse the model, reset the camera, and toggle labels.
-- Streams safe agent progress during completions, including reasoning milestones and tool execution, without exposing hidden chain-of-thought or large generated source arguments.
-- Persists chat threads, messages, artifact metadata, generated HTML, and generated scene source with DynamoDB and S3.
-- Lets users inspect and download generated artifact HTML.
+STEM concepts are often spatial and dynamic — engines, molecules, orbits, circuits — but most learning materials are flat. Static textbook diagrams and walls of text make it hard to build real intuition, and good interactive 3D content is expensive and slow to create, so it rarely exists for the exact thing you're trying to learn right now.
 
-## Product Flow
+## How We Solve It
 
-1. A user opens Parallax and lands in the chat console.
-2. The browser creates or reads a demo user id, loads thread summaries, and hydrates the active session from `/api/threads`.
-3. The user asks to learn or visualize a STEM topic.
-4. `/api/agent` runs the Parallax Agent in `chat` mode with the `research_stem_topic` and `create_experience` tools.
-5. If a 3D room is useful, the agent creates scene source plus structured metadata.
-6. Parallax validates the scene source, wraps it in the fixed artifact runtime, uploads the artifact payload to S3, and stores metadata/messages in DynamoDB.
-7. The user enters the learning room.
-8. The artifact emits typed events such as component selection and walkthrough step changes.
-9. Learning-room chat calls `/api/agent` in `learning_room` mode. The Tutor receives artifact context and can return text, artifact commands, or a complete replacement artifact when the learner asks to rebuild or patch the scene.
+Parallax generates an interactive 3D learning room on demand from a normal chat request — no waiting for someone to build it. Instead of just reading about a concept, you can rotate it, take it apart, step through how it works, and ask a tutor that already knows what you're looking at. The hard parts (designing the lesson, building a safe 3D scene, and checking it before it ships) are handled by a team of AI agents working behind the scenes.
 
-## Architecture
+## How It Works
 
-Parallax has three main layers:
+1. You ask a question in the chat.
+2. Parallax builds a lesson. Behind the scenes, a small team of AI agents plans the lesson, creates an interactive 3D model, and double-checks it before showing it to you.
+3. You enter the learning room. The 3D model appears on the left and a tutor chat on the right.
+4. You learn by doing. Click parts of the model, step through guided walkthroughs, and ask the tutor questions. The tutor can spin the model, highlight parts, start walkthroughs, or even rebuild the scene if you ask.
 
-- **Browser UI:** `components/app/ParallaxArtifactApp.tsx` owns the app shell, thread sidebar, chat console, proposal cards, and learning-room mode. Session state flows through `lib/session/sessionReducer.ts` and `useThreadSession`.
-- **Next.js API routes:** `app/api/agent/route.ts`, `app/api/threads/route.ts`, and `app/api/threads/[threadId]/route.ts` are thin route handlers. Most agent logic lives in `lib/agent/routes.ts`; thread persistence lives in `lib/cloud/threadStore.ts`.
-- **OpenAI Agents SDK:** `lib/agent/agents.ts` builds the Parallax Agent. In chat mode it can research and create experiences. In learning-room mode it can send artifact commands through a sink-backed tool or create a full replacement artifact for rebuild/patch requests.
+Everything the AI creates is sandboxed and checked for safety before it ever runs in your browser.
 
-The artifact system is its own trust boundary:
+## What You Can Do
 
-- `lib/artifacts/artifactTypes.ts` defines the Zod schemas for artifacts, commands, events, and sessions.
-- `lib/artifacts/artifactValidator.ts` statically validates generated scene source.
-- `lib/artifacts/artifactTemplate.ts` wraps validated source in the sealed Parallax runtime.
-- `lib/artifacts/messageBridge.ts` handles typed `postMessage` communication between the parent app and the sandboxed iframe.
+- Ask STEM questions or request a custom 3D learning room.
+- Explore interactive 3D models — focus on individual parts, explode and collapse them, toggle labels, and reset the view.
+- Follow step-by-step guided walkthroughs.
+- Chat with a tutor that understands what you're looking at and can control the model for you.
+- Ask the tutor to rebuild or tweak the scene.
+- Keep a history of your conversations and learning rooms.
 
-For deeper implementation notes, see [docs/parallax-architecture.md](docs/parallax-architecture.md).
+## Getting Started
 
-## Artifact Contract
+You'll need [Node.js](https://nodejs.org/) installed and an OpenAI API key.
 
-The model does not generate a complete HTML document. The `create_experience` tool receives:
+1. Install the dependencies
 
-- `topic`, `title`, `summary`, and optional learning outcomes
-- interactive component metadata
-- walkthrough step metadata
-- `sceneSource` JavaScript
 
-The generated `sceneSource` runs inside a fixed runtime where these globals already exist:
-
-- `THREE`
-- `scene`, `camera`, `renderer`, `root`, `controls`
-- `registerComponent`
-- `setWalkthroughSteps`
-- `setStatus`
-- `fitCameraTo`
-
-Generated scenes must register at least three meaningful components and define walkthrough steps. They cannot use arbitrary remote assets, `fetch`, WebSockets, dynamic imports, iframes, script tags, localStorage, cookies, or similar browser/network escape hatches.
-
-## Tech Stack
-
-- Next.js App Router
-- React and TypeScript
-- OpenAI Agents SDK
-- Three.js
-- Zod
-- AWS DynamoDB and S3
-- Exa search, optional
-- Vitest
-
-## Environment
-
-Create `.env.local` with:
-
-```bash
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.4
-EXA_API_KEY=
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_REGION=
-PARALLAX_THREADS_TABLE=
-PARALLAX_ARTIFACT_BUCKET=
-```
-
-`OPENAI_API_KEY` is required for live artifact creation and learning-room chat. `OPENAI_MODEL` is optional and defaults to `gpt-5.4`.
-
-`EXA_API_KEY` is optional. When it is absent or Exa fails, the agent continues from model knowledge.
-
-The current app uses the thread API on startup, so AWS credentials, a DynamoDB table, and an S3 bucket are required for normal persisted app usage. See [docs/parallax-architecture.md](docs/parallax-architecture.md) for table shape, bucket naming, IAM policy, and deployment notes.
-
-## Run Locally
-
-```bash
 npm install
+
+
+2. Add your API key
+
+Create a file called .env.local in the project root with at least:
+
+
+OPENAI_API_KEY=your-key-here
+
+
+That's all you need to run the app locally. The other settings below are optional.
+
+3. Start the app
+
+
 npm run dev
-```
 
-Open `http://localhost:3000`.
 
-## Commands
+Then open [http://localhost:3000](http://localhost:3000) in your browser.
 
-```bash
-npm run dev        # start the Next.js dev server
-npm run build      # build the app
+## Optional Settings
+
+Add any of these to .env.local if you want extra features:
+
+| Setting | What it does |
+| --- | --- |
+| OPENAI_MODEL | Choose which model to use (defaults to `gpt-5.4`). |
+| EXA_API_KEY | Lets the planner pull in real sources when designing a lesson. Without it, the app just uses the model's own knowledge. |
+| AWS_REGION, PARALLAX_THREADS_TABLE, PARALLAX_ARTIFACT_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY | Save your chats and learning rooms to the cloud (DynamoDB + S3). Without them, everything still works and is kept in your browser. |
+
+## Common Commands
+
+
+npm run dev        # start the development server
+npm run build      # build for production
 npm run start      # run the production build
-npm run test       # run Vitest once
-npm run test:watch # run Vitest in watch mode
-```
+npm run test       # run the tests once
+npm run test:watch # run the tests in watch mode
 
-## Verification
 
-Before shipping code changes, run:
+## Learn More
 
-```bash
-npm run test
-npm run build
-```
+- Built with: Next.js, React, TypeScript, Three.js, the OpenAI Agents SDK, and AWS (optional).
+- Deeper technical notes: see [docs/parallax-architecture.md](docs/parallax-architecture.md) and [AGENTS.md](AGENTS.md).
