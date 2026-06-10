@@ -76,6 +76,8 @@ type BuildLearningArtifactOptions = {
   onActivity?: AgentActivityEmitter;
 };
 
+const ARTIFACT_CRITIC_ENABLED = process.env.PARALLAX_ENABLE_ARTIFACT_CRITIC === "true";
+
 function makeBuilderPrompt(
   plan: LessonPlan,
   requestMessage: string,
@@ -307,6 +309,12 @@ export async function buildLearningArtifactFromPlan(
     label: "Artifact contract validated",
     ok: true,
   });
+
+  if (!ARTIFACT_CRITIC_ENABLED) {
+    const message = finalOutputText(acceptedResult.finalOutput, `I built ${acceptedArtifact.title}.`);
+    return { ok: true, message, trace, artifact: acceptedArtifact };
+  }
+
   trace.push("Reviewing artifact accuracy");
   emitActivity(options, {
     type: "phase.started",
@@ -457,7 +465,7 @@ export function makeBuildLearningArtifactToolSink(options: BuildLearningArtifact
   const buildTool = tool({
     name: "build_learning_artifact",
     description:
-      "Build or rebuild a complete, QA-reviewed Parallax 3D learning artifact from a concrete lesson plan.",
+      "Build or rebuild a complete, validated Parallax 3D learning artifact from a concrete lesson plan.",
     parameters: buildLearningArtifactInputSchema,
     async execute(input) {
       const plan = normalizePlan(input);

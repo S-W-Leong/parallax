@@ -162,13 +162,13 @@ describe("build learning artifact flow", () => {
     agentRuns.criticCalls = 0;
   });
 
-  it("runs the artifact critic with a tight turn budget", async () => {
+  it("skips the artifact critic for temporary instant generation", async () => {
     await buildLearningArtifactFromPlan(plan, "Teach me about cells");
 
-    expect(agentRuns.calls).toContainEqual({
+    expect(agentRuns.calls).not.toContainEqual(expect.objectContaining({
       agentName: "Parallax Artifact Critic",
-      maxTurns: 2,
-    });
+    }));
+    expect(agentRuns.criticCalls).toBe(0);
   });
 
   it("substitutes only the fixed jet engine 3D scene without running artifact agents", async () => {
@@ -220,7 +220,7 @@ describe("build learning artifact flow", () => {
     expect(agentRuns.calls).toEqual([]);
   });
 
-  it("repairs validator failures introduced by a critic-requested playground rebuild", async () => {
+  it("does not run critic-requested playground rebuilds while the critic is disabled", async () => {
     agentRuns.scenario = "critic-repair-validator-cleanup";
 
     const result = await buildLearningArtifactFromPlan({
@@ -257,7 +257,7 @@ describe("build learning artifact flow", () => {
         walkthroughSteps: [],
       },
     });
-    expect(agentRuns.builderCalls).toBe(3);
-    expect(agentRuns.criticCalls).toBe(2);
+    expect(agentRuns.builderCalls).toBe(1);
+    expect(agentRuns.criticCalls).toBe(0);
   });
 });
