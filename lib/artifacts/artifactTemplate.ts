@@ -22,11 +22,27 @@ function safeSceneSource(source: string): string {
 }
 
 export function renderArtifactHtml(input: ArtifactTemplateInput): string {
+  const lessonMode = input.lessonMode ?? "guided_walkthrough";
+  const hasWalkthroughControls = lessonMode === "guided_walkthrough" && input.walkthroughSteps.length > 0;
+  const walkthroughButtons = hasWalkthroughControls
+    ? `
+      <button id="prev-step" type="button">Prev</button>
+      <button id="next-step" type="button">Next</button>
+      <button id="start-walkthrough" type="button">Walkthrough</button>`
+    : "";
+  const playgroundControls = lessonMode === "playground"
+    ? `
+      <section id="playground-controls" aria-label="Playground controls"></section>`
+    : "";
   const payload = {
     id: input.id,
     title: input.title,
     topic: input.topic,
     summary: input.summary,
+    lessonMode,
+    interactionGoal: input.interactionGoal,
+    sources: input.sources,
+    controls: input.controls,
     components: input.components,
     walkthroughSteps: input.walkthroughSteps,
   };
@@ -82,7 +98,7 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
       align-items: end;
       pointer-events: none;
     }
-    #caption, #controls, #status {
+    #caption, #controls, #status, #playground-controls {
       border: 1px solid var(--line);
       background: var(--panel);
       backdrop-filter: blur(18px);
@@ -105,6 +121,55 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
       justify-content: flex-end;
       pointer-events: auto;
       max-width: 420px;
+    }
+    #playground-controls {
+      display: grid;
+      gap: 10px;
+      border-radius: 8px;
+      padding: 10px 12px;
+      pointer-events: auto;
+      min-width: min(320px, calc(100vw - 28px));
+      max-width: min(420px, calc(100vw - 28px));
+      align-self: stretch;
+    }
+    .playground-control {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px 12px;
+      align-items: center;
+    }
+    .playground-control label {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .playground-control input[type="range"] {
+      width: 100%;
+      margin: 0;
+      accent-color: var(--cyan);
+    }
+    .playground-control input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--cyan);
+      justify-self: end;
+    }
+    .playground-control-value {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      min-width: 48px;
+    }
+    .playground-control-input {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      grid-column: 1 / -1;
+    }
+    .playground-control-input[data-type="toggle"] {
+      justify-content: space-between;
     }
     #status {
       position: fixed;
@@ -132,10 +197,11 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
     @media (max-width: 720px) {
       #hud { grid-template-columns: 1fr; }
       #controls { justify-content: flex-start; max-width: none; }
+      #playground-controls { min-width: 0; max-width: none; }
     }
   </style>
 </head>
-<body>
+<body data-mode="${escapeHtml(lessonMode)}">
   <main id="stage" aria-label="${escapeHtml(input.title)} interactive 3D learning artifact"></main>
   <div id="status">Loading artifact runtime...</div>
   <div id="labels"></div>
@@ -144,10 +210,9 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
       <h1>${escapeHtml(input.title)}</h1>
       <p>${escapeHtml(input.summary)}</p>
     </article>
+    ${playgroundControls}
     <nav id="controls" aria-label="Artifact controls">
-      <button id="prev-step" type="button">Prev</button>
-      <button id="next-step" type="button">Next</button>
-      <button id="start-walkthrough" type="button">Walkthrough</button>
+      ${walkthroughButtons}
       <button id="explode" type="button">Explode</button>
       <button id="reset-camera" type="button">Reset</button>
       <button id="toggle-labels" type="button">Labels</button>
@@ -187,6 +252,7 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
       const stage = document.getElementById("stage");
       const labelsLayer = document.getElementById("labels");
       const caption = document.getElementById("caption");
+      const playgroundControls = document.getElementById("playground-controls");
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x05070b);
       const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -209,6 +275,14 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
       const raycaster = new THREE.Raycaster();
       const pointer = new THREE.Vector2();
       const registered = new Map();
+      const declaredControls = new Map();
+      for (const control of artifactPayload.controls || []) {
+        if (declaredControls.has(control.id)) {
+          throw new Error("Duplicate declared control id: " + control.id);
+        }
+        declaredControls.set(control.id, control);
+      }
+      const renderedControls = new Map();
       const objectToComponent = new WeakMap();
       const labels = new Map();
       let walkthroughSteps = artifactPayload.walkthroughSteps || [];
@@ -268,6 +342,154 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
       };
 
       window.setStatus = setStatus;
+
+      function assertControlDescriptor(descriptor) {
+        if (!descriptor || typeof descriptor !== "object") {
+          throw new Error("registerControl requires a descriptor object");
+        }
+        if (typeof descriptor.id !== "string" || !descriptor.id.trim()) {
+          throw new Error("registerControl requires a non-empty string id");
+        }
+        if (typeof descriptor.label !== "string" || !descriptor.label.trim()) {
+          throw new Error("registerControl requires a non-empty string label");
+        }
+        if (descriptor.type !== "range" && descriptor.type !== "toggle") {
+          throw new Error("registerControl only supports range and toggle controls");
+        }
+        if (descriptor.type === "range") {
+          if (!Number.isFinite(descriptor.min) || !Number.isFinite(descriptor.max)) {
+            throw new Error("Range controls require numeric min and max values");
+          }
+          if (!(descriptor.max > descriptor.min)) {
+            throw new Error("Range controls require max to be greater than min");
+          }
+          if (!Number.isFinite(descriptor.step) || !(descriptor.step > 0)) {
+            throw new Error("Range controls require a positive numeric step");
+          }
+          if (!Number.isFinite(descriptor.value)) {
+            throw new Error("Range controls require a numeric value");
+          }
+          if (descriptor.value < descriptor.min || descriptor.value > descriptor.max) {
+            throw new Error("Range control value must stay within min and max");
+          }
+        }
+        if (descriptor.type === "toggle" && typeof descriptor.value !== "boolean") {
+          throw new Error("Toggle controls require a boolean value");
+        }
+      }
+
+      function assertDeclaredControlMatches(descriptor) {
+        const declared = declaredControls.get(descriptor.id);
+        if (!declared) {
+          throw new Error('registerControl("' + descriptor.id + '") was not declared in artifact metadata');
+        }
+        if (declared.type !== descriptor.type) {
+          throw new Error('registerControl("' + descriptor.id + '") type does not match artifact metadata');
+        }
+        if (declared.label !== descriptor.label) {
+          throw new Error('registerControl("' + descriptor.id + '") label does not match artifact metadata');
+        }
+        if (declared.type === "range") {
+          if (
+            declared.min !== descriptor.min ||
+            declared.max !== descriptor.max ||
+            declared.step !== descriptor.step ||
+            declared.value !== descriptor.value
+          ) {
+            throw new Error('registerControl("' + descriptor.id + '") range settings do not match artifact metadata');
+          }
+        }
+        if (declared.type === "toggle" && declared.value !== descriptor.value) {
+          throw new Error('registerControl("' + descriptor.id + '") toggle value does not match artifact metadata');
+        }
+      }
+
+      function formatControlValue(descriptor, value) {
+        if (descriptor.type === "toggle") return value ? "On" : "Off";
+        const step = Number(descriptor.step);
+        const decimals = Number.isFinite(step) && step < 1
+          ? Math.min(4, String(step).split(".")[1]?.length || 0)
+          : 0;
+        return Number(value).toFixed(decimals);
+      }
+
+      window.registerControl = function registerControl(descriptor, callback) {
+        if (artifactPayload.lessonMode !== "playground") {
+          throw new Error("registerControl is only available for playground artifacts");
+        }
+        if (!playgroundControls) {
+          throw new Error("Playground controls container is missing from the runtime");
+        }
+        assertControlDescriptor(descriptor);
+        assertDeclaredControlMatches(descriptor);
+        if (typeof callback !== "function") {
+          throw new Error('registerControl("' + descriptor.id + '") requires a callback function');
+        }
+        if (renderedControls.has(descriptor.id)) {
+          throw new Error('registerControl("' + descriptor.id + '") was already registered');
+        }
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "playground-control";
+        wrapper.dataset.controlId = descriptor.id;
+
+        const label = document.createElement("label");
+        label.htmlFor = "playground-control-" + descriptor.id;
+        label.textContent = descriptor.label;
+
+        const value = document.createElement("span");
+        value.className = "playground-control-value";
+        value.textContent = formatControlValue(descriptor, descriptor.value);
+
+        const inputRow = document.createElement("div");
+        inputRow.className = "playground-control-input";
+        inputRow.dataset.type = descriptor.type;
+
+        const input = document.createElement("input");
+        input.id = "playground-control-" + descriptor.id;
+
+        let notify;
+        let lastNotifiedValue;
+        if (descriptor.type === "range") {
+          input.type = "range";
+          input.min = String(descriptor.min);
+          input.max = String(descriptor.max);
+          input.step = String(descriptor.step);
+          input.value = String(descriptor.value);
+          notify = () => {
+            const nextValue = Number(input.value);
+            if (Object.is(nextValue, lastNotifiedValue)) return;
+            lastNotifiedValue = nextValue;
+            value.textContent = formatControlValue(descriptor, nextValue);
+            callback(nextValue);
+          };
+          input.addEventListener("input", notify);
+          input.addEventListener("change", notify);
+        } else {
+          input.type = "checkbox";
+          input.checked = descriptor.value;
+          notify = () => {
+            const nextValue = Boolean(input.checked);
+            if (Object.is(nextValue, lastNotifiedValue)) return;
+            lastNotifiedValue = nextValue;
+            value.textContent = formatControlValue(descriptor, nextValue);
+            callback(nextValue);
+          };
+          input.addEventListener("input", notify);
+          input.addEventListener("change", notify);
+        }
+
+        inputRow.appendChild(input);
+        inputRow.appendChild(value);
+        wrapper.appendChild(label);
+        wrapper.appendChild(inputRow);
+
+        playgroundControls.appendChild(wrapper);
+        renderedControls.set(descriptor.id, wrapper);
+        notify();
+        return { descriptor, element: wrapper };
+      };
+      window.control = window.registerControl;
 
       function centerOf(object3D) {
         const box = new THREE.Box3().setFromObject(object3D);
@@ -452,12 +674,19 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         camera.position.multiplyScalar(event.deltaY > 0 ? 1.08 : 0.92);
       }, { passive: false });
 
-      document.getElementById("prev-step").onclick = () => goToStep(currentStepIndex - 1, true);
-      document.getElementById("next-step").onclick = () => goToStep(currentStepIndex + 1, true);
-      document.getElementById("start-walkthrough").onclick = () => window.startWalkthrough();
-      document.getElementById("reset-camera").onclick = () => window.resetCamera();
-      document.getElementById("toggle-labels").onclick = () => window.setLabelsVisible(!labelsVisible);
-      document.getElementById("explode").onclick = () => window.setExploded(!exploded);
+      const prevStepButton = document.getElementById("prev-step");
+      const nextStepButton = document.getElementById("next-step");
+      const startWalkthroughButton = document.getElementById("start-walkthrough");
+      const resetCameraButton = document.getElementById("reset-camera");
+      const toggleLabelsButton = document.getElementById("toggle-labels");
+      const explodeButton = document.getElementById("explode");
+
+      if (prevStepButton) prevStepButton.onclick = () => goToStep(currentStepIndex - 1, true);
+      if (nextStepButton) nextStepButton.onclick = () => goToStep(currentStepIndex + 1, true);
+      if (startWalkthroughButton) startWalkthroughButton.onclick = () => window.startWalkthrough();
+      if (resetCameraButton) resetCameraButton.onclick = () => window.resetCamera();
+      if (toggleLabelsButton) toggleLabelsButton.onclick = () => window.setLabelsVisible(!labelsVisible);
+      if (explodeButton) explodeButton.onclick = () => window.setExploded(!exploded);
 
       window.addEventListener("resize", () => {
         camera.aspect = window.innerWidth / window.innerHeight;
@@ -493,12 +722,25 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
           "root",
           "controls",
           "registerComponent",
+          "registerControl",
           "setWalkthroughSteps",
           "setStatus",
           "fitCameraTo",
           sceneSource + "\\n//# sourceURL=parallax-generated-scene.js"
         );
-        runScene(THREE, scene, camera, renderer, root, controls, window.registerComponent, window.setWalkthroughSteps, window.setStatus, window.fitCameraTo);
+        runScene(
+          THREE,
+          scene,
+          camera,
+          renderer,
+          root,
+          controls,
+          window.registerComponent,
+          window.registerControl,
+          window.setWalkthroughSteps,
+          window.setStatus,
+          window.fitCameraTo
+        );
         window.setWalkthroughSteps(walkthroughSteps);
         fitCameraToRegisteredComponents();
         setStatus("Artifact ready. Drag to rotate, scroll to zoom, click parts to inspect.");

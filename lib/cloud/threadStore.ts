@@ -167,6 +167,10 @@ export class AwsThreadStore implements ThreadStore {
           title: record.title,
           topic: record.topic,
           summary: record.summary,
+          lessonMode: record.lessonMode ?? "guided_walkthrough",
+          interactionGoal: record.interactionGoal,
+          sources: record.sources,
+          controls: record.controls,
           html: await bodyToString((htmlObject as { Body?: unknown }).Body),
           sceneSource: await bodyToString((sourceObject as { Body?: unknown }).Body),
           components: record.components,
@@ -264,6 +268,18 @@ export class AwsThreadStore implements ThreadStore {
       walkthroughSteps: removeUndefinedProperties(artifact.walkthroughSteps),
       createdAt: artifact.createdAt,
     };
+    if (artifact.lessonMode !== undefined) {
+      record.lessonMode = artifact.lessonMode;
+    }
+    if (artifact.interactionGoal !== undefined) {
+      record.interactionGoal = artifact.interactionGoal;
+    }
+    if (artifact.sources !== undefined) {
+      record.sources = removeUndefinedProperties(artifact.sources);
+    }
+    if (artifact.controls !== undefined) {
+      record.controls = removeUndefinedProperties(artifact.controls);
+    }
     if (artifact.learningOutcomes !== undefined) {
       record.learningOutcomes = removeUndefinedProperties(artifact.learningOutcomes);
     }

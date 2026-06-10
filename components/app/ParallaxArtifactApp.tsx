@@ -35,7 +35,8 @@ function isAbortError(error: unknown): boolean {
 }
 
 export function ParallaxArtifactApp() {
-  const { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread } = useThreadSession();
+  const { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread, refreshThreads } =
+    useThreadSession();
   const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null);
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const [sidebarHoverExpanded, setSidebarHoverExpanded] = useState(false);
@@ -84,11 +85,12 @@ export function ParallaxArtifactApp() {
     }
 
     if (event.error) {
+      const errorContent = event.message || event.error;
       if (!streamState.errorShown) {
         streamState.errorShown = true;
         dispatch({ type: "system_event", content: event.error, artifactId });
       }
-      dispatch({ type: "assistant_draft_stopped", id: draftId });
+      dispatch({ type: "assistant_draft_completed", id: draftId, content: errorContent, artifactId });
       return;
     }
 
@@ -161,6 +163,16 @@ export function ParallaxArtifactApp() {
     pendingRequestRef.current = request;
     setPendingRequest(request);
 
+    function clearCurrentRequest() {
+      if (pendingRequestRef.current?.id === requestId) {
+        pendingRequestRef.current = null;
+      }
+      setPendingRequest((current) => {
+        if (current?.id !== requestId) return current;
+        return null;
+      });
+    }
+
     try {
       const response = await fetch("/api/agent", {
         method: "POST",
@@ -169,6 +181,7 @@ export function ParallaxArtifactApp() {
         signal: controller.signal,
       });
       await readAgentStream(response, draftId, options.artifactId, controller.signal);
+      clearCurrentRequest();
     } catch (error) {
       if (isAbortError(error) || controller.signal.aborted) {
         dispatch({ type: "assistant_draft_stopped", id: draftId });
@@ -181,11 +194,7 @@ export function ParallaxArtifactApp() {
         });
       }
     } finally {
-      setPendingRequest((current) => {
-        if (current?.id !== requestId) return current;
-        pendingRequestRef.current = null;
-        return null;
-      });
+      clearCurrentRequest();
     }
   }
 
@@ -236,7 +245,7 @@ export function ParallaxArtifactApp() {
   }
 
   function selectThreadIfIdle(threadId: string) {
-    if (pendingRequestRef.current) return;
+    if (pendingRequestRef.current) stopResponse();
     void selectThread(threadId);
   }
 

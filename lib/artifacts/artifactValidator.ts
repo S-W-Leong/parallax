@@ -19,6 +19,32 @@ const forbiddenNetworkPatterns = [
   /\bimport\s*\(/i,
 ];
 
+function stripLineAndBlockComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^\\:])\/\/.*$/gm, "$1");
+}
+
+function collectRegisteredControlIds(source: string): Set<string> {
+  const registeredIds = new Set<string>();
+  const commentStrippedSource = stripLineAndBlockComments(source);
+  const patterns = [
+    /registerControl\s*\(\s*\{\s*[\s\S]*?\bid\s*:\s*["'`]([^"'`]+)["'`]/g,
+    /registerControl\s*\(\s*["'`]([^"'`]+)["'`]/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of commentStrippedSource.matchAll(pattern)) {
+      const id = match[1]?.trim();
+      if (id) {
+        registeredIds.add(id);
+      }
+    }
+  }
+
+  return registeredIds;
+}
+
 function syntaxErrorMessage(source: string): string | null {
   try {
     new Function(
@@ -29,6 +55,7 @@ function syntaxErrorMessage(source: string): string | null {
       "root",
       "controls",
       "registerComponent",
+      "registerControl",
       "setWalkthroughSteps",
       "setStatus",
       "fitCameraTo",
@@ -91,6 +118,50 @@ export function createArtifactRecord(input: CreateExperienceInput): CreateArtifa
   const validation = validateSceneSource(parsed.data.sceneSource);
   if (!validation.ok) return validation;
 
+  if (parsed.data.lessonMode === "playground") {
+    if (parsed.data.walkthroughSteps.length > 0) {
+      return {
+        ok: false,
+        error: "Playground artifacts must not declare walkthrough steps.",
+      };
+    }
+
+    if (!parsed.data.controls?.length) {
+      return {
+        ok: false,
+        error: "Playground artifacts must declare at least one control.",
+      };
+    }
+
+    if (!/registerControl\s*\(/.test(parsed.data.sceneSource)) {
+      return {
+        ok: false,
+        error: "Playground scene source must call registerControl.",
+      };
+    }
+  }
+
+  if (parsed.data.lessonMode === "guided_walkthrough" && parsed.data.walkthroughSteps.length === 0) {
+    return {
+      ok: false,
+      error: "Guided walkthrough artifacts must include at least one step.",
+    };
+  }
+
+  if (parsed.data.lessonMode === "guided_walkthrough" && (parsed.data.controls?.length ?? 0) > 0) {
+    return {
+      ok: false,
+      error: "Guided walkthrough artifacts must not declare controls.",
+    };
+  }
+
+  if (parsed.data.lessonMode === "guided_walkthrough" && /registerControl\s*\(/.test(parsed.data.sceneSource)) {
+    return {
+      ok: false,
+      error: "Guided walkthrough scene source must not call registerControl.",
+    };
+  }
+
   const missingComponentIds = parsed.data.components
     .map((component) => component.id)
     .filter((id) => !parsed.data.sceneSource.includes(id));
@@ -98,6 +169,27 @@ export function createArtifactRecord(input: CreateExperienceInput): CreateArtifa
     return {
       ok: false,
       error: `Generated scene source does not reference declared component ids: ${missingComponentIds.join(", ")}`,
+    };
+  }
+
+  const registeredControlIds = collectRegisteredControlIds(parsed.data.sceneSource);
+  const missingControlIds = parsed.data.controls
+    ?.map((control) => control.id)
+    .filter((id) => !registeredControlIds.has(id));
+  if (missingControlIds?.length) {
+    return {
+      ok: false,
+      error: `Generated scene source does not reference declared control ids: ${missingControlIds.join(", ")}`,
+    };
+  }
+
+  const declaredControlIds = new Set(parsed.data.controls?.map((control) => control.id) ?? []);
+  const extraRegisteredControlIds = Array.from(registeredControlIds)
+    .filter((id) => !declaredControlIds.has(id));
+  if (extraRegisteredControlIds.length) {
+    return {
+      ok: false,
+      error: `Generated scene source registers undeclared control ids: ${extraRegisteredControlIds.join(", ")}`,
     };
   }
 

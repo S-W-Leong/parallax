@@ -15,6 +15,19 @@ const artifact: ArtifactRecord = {
   title: "Jet Engine Explorer",
   topic: "jet engines",
   summary: "A guided turbofan room.",
+  lessonMode: "playground",
+  interactionGoal: "Adjust the jet engine controls to compare airflow and thrust.",
+  sources: [
+    {
+      title: "NASA Turbofan Overview",
+      url: "https://www.nasa.gov/turbofan",
+      summary: "A concise reference for fan, compressor, combustor, and turbine flow.",
+    },
+  ],
+  controls: [
+    { id: "airflow", type: "range", label: "Airflow", min: 0, max: 100, step: 5, value: 50 },
+    { id: "labels", type: "toggle", label: "Labels", value: true },
+  ],
   sceneSource: "const fan = new THREE.Group();",
   html: "<!doctype html><html><body>engine</body></html>",
   components: [
@@ -192,6 +205,16 @@ describe("AwsThreadStore", () => {
               sceneSourceS3Key: "artifacts/thread-1/artifact-1/scene.js",
               components: [{ id: "nucleus", label: "Nucleus" }],
               walkthroughSteps: [{ id: "intro", title: "Intro", narration: "Start at the nucleus.", targetComponentIds: ["nucleus"] }],
+              lessonMode: "playground",
+              interactionGoal: "Toggle labels to compare the nucleus with the membrane.",
+              sources: [
+                {
+                  title: "NIH Cell Basics",
+                  url: "https://www.nih.gov/cell-basics",
+                  summary: "Overview of organelles and their roles in cell structure.",
+                },
+              ],
+              controls: [{ id: "labels", type: "toggle", label: "Labels", value: true }],
               createdAt: "2026-06-09T14:01:00.000Z",
             },
             {
@@ -273,6 +296,16 @@ describe("AwsThreadStore", () => {
           title: "Cell Explorer",
           topic: "cells",
           summary: "A guided cell room.",
+          lessonMode: "playground",
+          interactionGoal: "Toggle labels to compare the nucleus with the membrane.",
+          sources: [
+            {
+              title: "NIH Cell Basics",
+              url: "https://www.nih.gov/cell-basics",
+              summary: "Overview of organelles and their roles in cell structure.",
+            },
+          ],
+          controls: [{ id: "labels", type: "toggle", label: "Labels", value: true }],
           html: "<!doctype html><html><body>cell</body></html>",
           sceneSource: "const nucleus = {};",
           components: [{ id: "nucleus", label: "Nucleus" }],
@@ -311,6 +344,57 @@ describe("AwsThreadStore", () => {
     expect(archivedDynamo.send).toHaveBeenCalledTimes(1);
     expect(missingDynamo.send).toHaveBeenCalledTimes(1);
     expect(s3.send).not.toHaveBeenCalled();
+  });
+
+  it("hydrates legacy artifacts without lessonMode as guided walkthrough", async () => {
+    const dynamo = {
+      send: vi
+        .fn()
+        .mockResolvedValueOnce({
+          Item: {
+            PK: "USER#demo-1",
+            SK: "THREAD#thread-1",
+            entityType: "thread",
+            userId: "demo-1",
+            threadId: "thread-1",
+            title: "Cells",
+            createdAt: "2026-06-09T14:00:00.000Z",
+            updatedAt: "2026-06-09T14:02:00.000Z",
+          },
+        })
+        .mockResolvedValueOnce({
+          Items: [
+            {
+              PK: "THREAD#thread-1",
+              SK: "ARTIFACT#2026-06-09T14:01:00.000Z#artifact-1",
+              entityType: "artifact",
+              threadId: "thread-1",
+              artifactId: "artifact-1",
+              title: "Cell Explorer",
+              topic: "cells",
+              summary: "A guided cell room.",
+              interactionGoal: "Compare organelles.",
+              controls: [{ id: "labels", type: "toggle", label: "Labels", value: true }],
+              htmlS3Key: "artifacts/thread-1/artifact-1/index.html",
+              sceneSourceS3Key: "artifacts/thread-1/artifact-1/scene.js",
+              components: [{ id: "nucleus", label: "Nucleus" }],
+              walkthroughSteps: [{ id: "intro", title: "Intro", narration: "Start at the nucleus.", targetComponentIds: ["nucleus"] }],
+              createdAt: "2026-06-09T14:01:00.000Z",
+            },
+          ],
+        }),
+    };
+    const s3 = {
+      send: vi
+        .fn()
+        .mockResolvedValueOnce({ Body: { transformToString: vi.fn().mockResolvedValue("<!doctype html><html><body>cell</body></html>") } })
+        .mockResolvedValueOnce({ Body: { transformToString: vi.fn().mockResolvedValue("const nucleus = {};") } }),
+    };
+    const store = new AwsThreadStore({ dynamo, s3, tableName: "threads-table", bucketName: "artifact-bucket" });
+
+    const loaded = await store.loadThread("demo-1", "thread-1");
+
+    expect(loaded.artifacts[0]?.lessonMode).toBe("guided_walkthrough");
   });
 
   it("validates ownership, updates the summary, and persists a message under the thread partition", async () => {
@@ -381,6 +465,19 @@ describe("AwsThreadStore", () => {
       PK: "THREAD#thread-1",
       SK: "ARTIFACT#artifact-1",
       entityType: "artifact",
+      lessonMode: "playground",
+      interactionGoal: "Adjust the jet engine controls to compare airflow and thrust.",
+      sources: [
+        {
+          title: "NASA Turbofan Overview",
+          url: "https://www.nasa.gov/turbofan",
+          summary: "A concise reference for fan, compressor, combustor, and turbine flow.",
+        },
+      ],
+      controls: [
+        { id: "airflow", type: "range", label: "Airflow", min: 0, max: 100, step: 5, value: 50 },
+        { id: "labels", type: "toggle", label: "Labels", value: true },
+      ],
       htmlS3Key: "artifacts/thread-1/artifact-1/index.html",
       sceneSourceS3Key: "artifacts/thread-1/artifact-1/scene.js",
     });

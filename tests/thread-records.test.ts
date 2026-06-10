@@ -100,4 +100,36 @@ describe("threadRecords", () => {
 
     expect(record.learningOutcomes).toEqual(["Trace airflow", "Compare pressure zones", "See thrust form"]);
   });
+
+  it("allows artifact metadata records to carry lesson metadata and controls", () => {
+    const record: ArtifactMetadataRecord = {
+      PK: "THREAD#thread-2",
+      SK: "ARTIFACT#artifact-2",
+      entityType: "artifact",
+      threadId: "thread-2",
+      artifactId: "artifact-2",
+      title: "Spring Playground",
+      topic: "oscillations",
+      summary: "Manipulate displacement and observe energy storage.",
+      htmlS3Key: "artifacts/thread-2/artifact-2/index.html",
+      sceneSourceS3Key: "artifacts/thread-2/artifact-2/scene.js",
+      components: [
+        { id: "spring", label: "Spring" },
+        { id: "mass", label: "Mass" },
+        { id: "energy-bar", label: "Energy Bar" },
+      ],
+      walkthroughSteps: [],
+      lessonMode: "playground",
+      interactionGoal: "Adjust displacement to compare the system energy.",
+      controls: [
+        { id: "displacement", type: "range", label: "Displacement", min: -2, max: 2, step: 0.1, value: 0 },
+        { id: "labels", type: "toggle", label: "Labels", value: true },
+      ],
+      createdAt: "2026-06-10T00:05:00.000Z",
+    };
+
+    expect(record.lessonMode).toBe("playground");
+    expect(record.interactionGoal).toContain("displacement");
+    expect(record.controls?.[0]?.id).toBe("displacement");
+  });
 });

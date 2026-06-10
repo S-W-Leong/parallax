@@ -89,7 +89,6 @@ export function ThreadSidebar({
                   onSelectThread(thread.id);
                   onCloseMobile();
                 }}
-                disabled={actionsDisabled}
                 aria-current={isActive ? "page" : undefined}
                 title={thread.title}
               >

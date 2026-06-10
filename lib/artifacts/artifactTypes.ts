@@ -22,15 +22,74 @@ export const walkthroughStepSchema = z.object({
 
 export const learningOutcomeSchema = z.string().min(1).max(96);
 
+export const lessonModeSchema = z.enum(["playground", "guided_walkthrough"]);
+
+const urlStringSchema = z.string().min(1).refine((value) => {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}, "Expected a valid URL.");
+
+export const artifactSourceSchema = z.object({
+  title: z.string().min(1),
+  url: urlStringSchema,
+  summary: z.string().min(1),
+});
+
+const rangeArtifactControlSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal("range"),
+  label: z.string().min(1),
+  min: z.number(),
+  max: z.number(),
+  step: z.number().positive(),
+  value: z.number(),
+}).superRefine((control, ctx) => {
+  if (control.max <= control.min) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["max"],
+      message: "Range control max must be greater than min.",
+    });
+  }
+
+  if (control.value < control.min || control.value > control.max) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["value"],
+      message: "Range control value must be within [min, max].",
+    });
+  }
+});
+
+const toggleArtifactControlSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal("toggle"),
+  label: z.string().min(1),
+  value: z.boolean(),
+});
+
+export const artifactControlSchema = z.discriminatedUnion("type", [
+  rangeArtifactControlSchema,
+  toggleArtifactControlSchema,
+]);
+
 export const artifactRecordSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   topic: z.string().min(1),
   summary: z.string().min(1),
+  lessonMode: lessonModeSchema.default("guided_walkthrough"),
+  interactionGoal: z.string().min(1).optional(),
+  sources: z.array(artifactSourceSchema).max(4).optional(),
+  controls: z.array(artifactControlSchema).max(6).optional(),
   sceneSource: z.string().min(1),
   html: z.string().min(1),
   components: z.array(artifactComponentSchema).min(1),
-  walkthroughSteps: z.array(walkthroughStepSchema).min(1),
+  walkthroughSteps: z.array(walkthroughStepSchema),
   learningOutcomes: z.array(learningOutcomeSchema).max(3).optional(),
   createdAt: z.string().min(1),
 });
@@ -112,9 +171,13 @@ export const createExperienceInputSchema = z.object({
   topic: z.string().min(1),
   title: z.string().min(1),
   summary: z.string().min(1),
+  lessonMode: lessonModeSchema.default("guided_walkthrough"),
+  interactionGoal: z.string().min(1).optional(),
+  sources: z.array(artifactSourceSchema).max(4).optional(),
+  controls: z.array(artifactControlSchema).max(6).optional(),
   sceneSource: z.string().min(1),
   components: z.array(artifactComponentSchema).min(3),
-  walkthroughSteps: z.array(walkthroughStepSchema).min(1),
+  walkthroughSteps: z.array(walkthroughStepSchema),
   learningOutcomes: z.array(learningOutcomeSchema).min(1).max(3).optional(),
 });
 
@@ -134,6 +197,9 @@ export const learningSessionSchema = z.object({
 export type ArtifactComponent = z.infer<typeof artifactComponentSchema>;
 export type WalkthroughStep = z.infer<typeof walkthroughStepSchema>;
 export type ArtifactRecord = z.infer<typeof artifactRecordSchema>;
+export type LessonMode = z.infer<typeof lessonModeSchema>;
+export type ArtifactSource = z.infer<typeof artifactSourceSchema>;
+export type ArtifactControl = z.infer<typeof artifactControlSchema>;
 export type SelectedComponent = z.infer<typeof selectedComponentSchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ArtifactCommand = z.infer<typeof artifactCommandSchema>;

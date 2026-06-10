@@ -18,6 +18,9 @@ const artifact: ArtifactRecord = {
   title: "Jet Engine Explorer",
   topic: "jet engines",
   summary: "A guided turbofan room.",
+  lessonMode: "guided_walkthrough",
+  interactionGoal: "Trace airflow from the fan through the turbine.",
+  controls: [{ id: "labels", type: "toggle", label: "Labels", value: true }],
   sceneSource: "const fan = new THREE.Group();",
   html: "<!doctype html><html><body>engine</body></html>",
   components: [
@@ -51,5 +54,7 @@ describe("createSessionFromThread", () => {
       pendingCommands: [],
       trace: [],
     });
+    expect(session.artifacts["artifact-1"]?.lessonMode).toBe("guided_walkthrough");
+    expect(session.artifacts["artifact-1"]?.controls?.[0]?.id).toBe("labels");
   });
 });

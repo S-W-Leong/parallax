@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeCreateExperienceToolSink } from "@/lib/agent/tools/createExperienceTool";
+import { makeLessonPlanToolSink } from "@/lib/agent/tools/lessonPlanTool";
 import { makeResearchStemTopicTool } from "@/lib/agent/tools/researchStemTopicTool";
 import { makeSendArtifactCommandSink } from "@/lib/agent/tools/sendArtifactCommandTool";
 
@@ -21,6 +22,10 @@ describe("agent tools", () => {
       topic: "cell biology",
       title: "Inside a Cell",
       summary: "A guided tour of organelles.",
+      lessonMode: "guided_walkthrough",
+      interactionGoal: null,
+      sources: null,
+      controls: null,
       learningOutcomes: null,
       sceneSource,
       components: [
@@ -35,12 +40,187 @@ describe("agent tools", () => {
     expect(sink.getResult()).toMatchObject({ ok: true, artifact: { title: "Inside a Cell" } });
   });
 
+  it("accepts legacy guided walkthrough payloads without adaptive lesson fields", async () => {
+    const sink = makeCreateExperienceToolSink();
+    const output = await sink.tool.invoke(undefined as never, JSON.stringify({
+      topic: "cell biology",
+      title: "Inside a Cell",
+      summary: "A guided tour of organelles.",
+      sceneSource,
+      components: [
+        { id: "membrane", label: "Cell membrane", description: null, metadata: null },
+        { id: "nucleus", label: "Nucleus", description: null, metadata: null },
+        { id: "ribosome", label: "Ribosome", description: null, metadata: null },
+      ],
+      walkthroughSteps: [{ id: "intro", title: "Cell tour", narration: "Start with the membrane.", targetComponentIds: ["membrane"], camera: null }],
+    }));
+
+    expect(output).toMatchObject({ ok: true });
+    expect(sink.getResult()).toMatchObject({
+      ok: true,
+      artifact: {
+        lessonMode: "guided_walkthrough",
+        interactionGoal: undefined,
+        sources: undefined,
+        controls: undefined,
+        title: "Inside a Cell",
+      },
+    });
+  });
+
+  it("accepts a playground payload and stores lesson-mode controls", async () => {
+    const sink = makeCreateExperienceToolSink();
+    const output = await sink.tool.invoke(undefined as never, JSON.stringify({
+      topic: "elastic potential energy",
+      title: "Elastic Potential Energy Playground",
+      summary: "Adjust displacement and watch stored energy change.",
+      lessonMode: "playground",
+      interactionGoal: "Change displacement and connect spring deformation to U = 1/2kx^2.",
+      sources: [
+        {
+          title: "Hooke's law",
+          url: "https://example.com/hookes-law",
+          summary: "A quick refresher on force and displacement.",
+        },
+      ],
+      controls: [
+        { id: "displacement", type: "range", label: "Displacement", min: -2, max: 2, step: 0.1, value: 1 },
+      ],
+      learningOutcomes: null,
+      sceneSource: `
+const spring = new THREE.Group();
+const mass = new THREE.Group();
+const energyBar = new THREE.Group();
+root.add(spring, mass, energyBar);
+registerComponent("spring", "Spring", spring, {});
+registerComponent("mass", "Mass", mass, {});
+registerComponent("energy-bar", "Energy Bar", energyBar, {});
+registerControl({ id: "displacement", type: "range", label: "Displacement", min: -2, max: 2, step: 0.1, value: 1 }, function(value) {
+  mass.position.x = value;
+});
+setWalkthroughSteps([]);
+`,
+      components: [
+        { id: "spring", label: "Spring", description: null, metadata: null },
+        { id: "mass", label: "Mass", description: null, metadata: null },
+        { id: "energy-bar", label: "Energy Bar", description: null, metadata: null },
+      ],
+      walkthroughSteps: [],
+    }));
+
+    expect(output).toMatchObject({ ok: true, walkthroughStepCount: 0 });
+    expect(sink.getResult()).toMatchObject({
+      ok: true,
+      artifact: {
+        lessonMode: "playground",
+        interactionGoal: "Change displacement and connect spring deformation to U = 1/2kx^2.",
+        controls: [{ id: "displacement", type: "range", label: "Displacement", min: -2, max: 2, step: 0.1, value: 1 }],
+        sources: [{
+          title: "Hooke's law",
+          url: "https://example.com/hookes-law",
+          summary: "A quick refresher on force and displacement.",
+        }],
+        walkthroughSteps: [],
+      },
+    });
+  });
+
   it("does not expose tuple-style JSON schema arrays to OpenAI", () => {
     const sink = makeCreateExperienceToolSink();
     const serialized = JSON.stringify(sink.tool.parameters);
 
     expect(serialized).not.toContain('"items":[{');
     expect(serialized).not.toContain("propertyNames");
+    expect(serialized).not.toContain('"format":"uri"');
+  });
+
+  it("records a structured lesson plan from the planner tool", async () => {
+    const sink = makeLessonPlanToolSink();
+    const output = await sink.tool.invoke(undefined as never, JSON.stringify({
+      artifactNeeded: true,
+      lessonMode: "playground",
+      title: "Elastic Potential Energy Playground",
+      topic: "elastic potential energy",
+      rationale: "The core idea is best learned by changing displacement and seeing energy respond.",
+      interactionGoal: "Adjust displacement and watch U = 1/2kx^2 update.",
+      researchUsed: false,
+      sources: [],
+      requiredComponents: ["spring", "mass", "energy bar"],
+      builderBrief: "Build a spring-mass playground with a displacement slider and energy bar.",
+    }));
+
+    expect(output).toMatchObject({ ok: true, lessonMode: "playground" });
+    expect(sink.getResult()).toMatchObject({
+      ok: true,
+      plan: {
+        artifactNeeded: true,
+        lessonMode: "playground",
+        title: "Elastic Potential Energy Playground",
+        topic: "elastic potential energy",
+        rationale: "The core idea is best learned by changing displacement and seeing energy respond.",
+        interactionGoal: "Adjust displacement and watch U = 1/2kx^2 update.",
+        researchUsed: false,
+        sources: [],
+        requiredComponents: ["spring", "mass", "energy bar"],
+        builderBrief: "Build a spring-mass playground with a displacement slider and energy bar.",
+      },
+    });
+  });
+
+  it("normalizes nullable lesson-plan fields away when no artifact is needed", async () => {
+    const sink = makeLessonPlanToolSink();
+    const output = await sink.tool.invoke(undefined as never, JSON.stringify({
+      artifactNeeded: false,
+      lessonMode: null,
+      title: null,
+      topic: null,
+      rationale: "A direct text explanation is enough for this request.",
+      interactionGoal: null,
+      researchUsed: false,
+      sources: [],
+      requiredComponents: [],
+      builderBrief: null,
+    }));
+
+    expect(output).toMatchObject({ ok: true, artifactNeeded: false });
+    expect(sink.getResult()).toEqual({
+      ok: true,
+      plan: {
+        artifactNeeded: false,
+        rationale: "A direct text explanation is enough for this request.",
+        researchUsed: false,
+        sources: [],
+        requiredComponents: [],
+      },
+    });
+  });
+
+  it("rejects artifact-needed lesson plans that omit required artifact fields", async () => {
+    const sink = makeLessonPlanToolSink();
+    const output = await sink.tool.invoke(undefined as never, JSON.stringify({
+      artifactNeeded: true,
+      lessonMode: null,
+      title: "Elastic Potential Energy Playground",
+      topic: "elastic potential energy",
+      rationale: "A visual playground would help.",
+      interactionGoal: "Adjust displacement and watch energy update.",
+      researchUsed: false,
+      sources: [],
+      requiredComponents: ["spring"],
+      builderBrief: "Build the spring playground.",
+    }));
+
+    expect(output).toContain("InvalidToolInputError");
+    expect(sink.getResult()).toBeNull();
+  });
+
+  it("does not expose tuple-style or property-name JSON schema features in lesson-plan parameters", () => {
+    const sink = makeLessonPlanToolSink();
+    const serialized = JSON.stringify(sink.tool.parameters);
+
+    expect(serialized).not.toContain('"items":[{');
+    expect(serialized).not.toContain("propertyNames");
+    expect(serialized).not.toContain('"format":"uri"');
   });
 
   it("keeps the raw validation error when create_experience fails", async () => {
@@ -49,6 +229,10 @@ describe("agent tools", () => {
       topic: "bad",
       title: "Bad",
       summary: "Bad artifact.",
+      lessonMode: "guided_walkthrough",
+      interactionGoal: null,
+      sources: null,
+      controls: null,
       learningOutcomes: null,
       sceneSource: `${sceneSource}\nfetch("https://example.com")`,
       components: [

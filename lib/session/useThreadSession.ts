@@ -5,6 +5,7 @@ import type { LearningSession } from "@/lib/artifacts/artifactTypes";
 import type { PersistedThreadSummary } from "@/lib/cloud/threadRecords";
 import { getDemoUserId } from "@/lib/demo/demoUser";
 import { createEmptySession, sessionReducer, type SessionAction } from "./sessionReducer";
+import { sortThreadSummariesByRecentUpdate } from "./threadSummaries";
 
 type ThreadListResponse = { threads: PersistedThreadSummary[] };
 type CreateThreadResponse = { thread: PersistedThreadSummary };
@@ -42,6 +43,7 @@ export function useThreadSession(): {
   createThread: () => Promise<void>;
   selectThread: (threadId: string) => Promise<void>;
   archiveThread: (threadId: string) => Promise<void>;
+  refreshThreads: () => Promise<void>;
 } {
   const [hydrated, setHydrated] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -59,6 +61,13 @@ export function useThreadSession(): {
     dispatch({ type: "session_loaded", session: data.session });
   }, []);
 
+  const refreshThreads = useCallback(async () => {
+    if (!userId) return;
+
+    const data = await readJson<ThreadListResponse>(await fetch(`/api/threads?userId=${encodeURIComponent(userId)}`));
+    setThreads(sortThreadSummariesByRecentUpdate(data.threads));
+  }, [userId]);
+
   useEffect(() => {
     let active = true;
 
@@ -71,9 +80,10 @@ export function useThreadSession(): {
         const data = await readJson<ThreadListResponse>(await fetch(`/api/threads?userId=${encodeURIComponent(nextUserId)}`));
         if (!active) return;
 
-        setThreads(data.threads);
-        if (data.threads[0]) {
-          await loadThreadForUser(nextUserId, data.threads[0].id);
+        const sortedThreads = sortThreadSummariesByRecentUpdate(data.threads);
+        setThreads(sortedThreads);
+        if (sortedThreads[0]) {
+          await loadThreadForUser(nextUserId, sortedThreads[0].id);
         } else {
           const thread = await createThreadForUser(nextUserId);
           if (!active) return;
@@ -97,7 +107,7 @@ export function useThreadSession(): {
     if (!userId) return;
 
     const thread = await createThreadForUser(userId);
-    setThreads((current) => [thread, ...current]);
+    setThreads((current) => sortThreadSummariesByRecentUpdate([thread, ...current]));
     setActiveThreadId(thread.id);
     dispatch({ type: "session_loaded", session: { ...createEmptySession(), id: thread.id } });
   }, [userId]);
@@ -135,5 +145,5 @@ export function useThreadSession(): {
     [activeThreadId, loadThreadForUser, threads, userId],
   );
 
-  return { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread };
+  return { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread, refreshThreads };
 }

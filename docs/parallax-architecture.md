@@ -178,6 +178,8 @@ Learning room chat sends:
 
 The route gives the same Parallax Agent different tools based on mode. Main chat gets `research_stem_topic` and `create_experience`. Learning room chat gets `send_artifact_command` plus active artifact context.
 
+Tool parameter schemas are also part of the API boundary. Keep them within the JSON Schema subset accepted by OpenAI tool validation. For example, source URLs are validated in Zod with `new URL(...)` instead of `z.string().url()` so the generated tool schema does not emit `format: "uri"`, which the OpenAI API rejects for function parameters.
+
 ## Artifact Contract
 
 The model does not generate the whole page. It generates `sceneSource` JavaScript plus metadata. The fixed runtime provides:

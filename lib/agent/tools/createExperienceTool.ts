@@ -1,7 +1,12 @@
 import { tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 import { createArtifactRecord, type CreateArtifactRecordResult } from "@/lib/artifacts/artifactValidator";
-import type { CreateExperienceInput } from "@/lib/artifacts/artifactTypes";
+import {
+  artifactControlSchema,
+  artifactSourceSchema,
+  lessonModeSchema,
+  type CreateExperienceInput,
+} from "@/lib/artifacts/artifactTypes";
 
 const vector3Schema = z.array(z.number()).min(3).max(3);
 
@@ -9,7 +14,11 @@ const createExperienceToolInputSchema = z.object({
   topic: z.string().min(1),
   title: z.string().min(1),
   summary: z.string().min(1),
-  learningOutcomes: z.array(z.string().min(1).max(96)).min(1).max(3).nullable(),
+  lessonMode: lessonModeSchema.default("guided_walkthrough"),
+  interactionGoal: z.string().min(1).nullable().optional(),
+  sources: z.array(artifactSourceSchema).max(4).nullable().optional(),
+  controls: z.array(artifactControlSchema).max(6).nullable().optional(),
+  learningOutcomes: z.array(z.string().min(1).max(96)).min(1).max(3).nullable().optional(),
   sceneSource: z.string().min(1),
   components: z.array(z.object({
     id: z.string().min(1),
@@ -26,7 +35,7 @@ const createExperienceToolInputSchema = z.object({
       position: vector3Schema.nullable(),
       lookAt: vector3Schema.nullable(),
     }).nullable(),
-  })).min(1),
+  })),
 });
 
 function normalizeToolInput(input: z.infer<typeof createExperienceToolInputSchema>): CreateExperienceInput {
@@ -46,6 +55,9 @@ function normalizeToolInput(input: z.infer<typeof createExperienceToolInputSchem
 
   return {
     ...input,
+    interactionGoal: input.interactionGoal ?? undefined,
+    sources: input.sources ?? undefined,
+    controls: input.controls ?? undefined,
     learningOutcomes: input.learningOutcomes ?? undefined,
     components: input.components.map((component) => ({
       id: component.id,
