@@ -58,6 +58,10 @@ describe("/api/agent route", () => {
 
     expect(response.headers.get("content-type")).toContain("text/event-stream");
     expect(await response.text()).toContain("event: status");
+    expect(mockedHandleAgentRouteStream).toHaveBeenCalledWith(
+      { mode: "chat", message: "Hi", messages: [] },
+      { signal: expect.any(AbortSignal) },
+    );
     expect(mockedHandleAgentRoute).not.toHaveBeenCalled();
   });
 
@@ -75,6 +79,9 @@ describe("/api/agent route", () => {
     }));
 
     expect(response.headers.get("content-type")).toContain("text/event-stream");
-    expect(mockedHandleAgentRouteStream).toHaveBeenCalledWith({ mode: "chat", message: "Hi", messages: [] });
+    expect(mockedHandleAgentRouteStream).toHaveBeenCalledWith(
+      { mode: "chat", message: "Hi", messages: [] },
+      { signal: expect.any(AbortSignal) },
+    );
   });
 });

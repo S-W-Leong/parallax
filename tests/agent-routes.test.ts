@@ -251,7 +251,11 @@ describe("agent routes", () => {
     const response = handleAgentRouteStream({ mode: "chat", message: "Teach me cells", messages: [] });
     const events = decodeAgentStreamEvents(await new Response(response).text());
 
-    expect(mockedRun).toHaveBeenCalledWith(expect.anything(), expect.any(String), { maxTurns: 8, stream: true });
+    expect(mockedRun).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
+      maxTurns: 8,
+      stream: true,
+      signal: expect.any(AbortSignal),
+    });
     expect(events).toEqual([
       { type: "status", message: "Planning the learning experience..." },
       { type: "delta", delta: "Let us " },
@@ -285,5 +289,44 @@ describe("agent routes", () => {
         error: "Model unavailable",
       },
     ]);
+  });
+
+  it("passes a combined abort signal to streaming runs and aborts it when the response stream is canceled", async () => {
+    let textController: ReadableStreamDefaultController<string> | null = null;
+    mockedRun.mockImplementationOnce(async (_agent, _prompt, options) => {
+      options?.signal?.addEventListener("abort", () => textController?.close(), { once: true });
+      return {
+        finalOutput: undefined,
+        completed: new Promise<void>((resolve) => {
+          options?.signal?.addEventListener("abort", () => resolve(), { once: true });
+        }),
+        error: null,
+        toTextStream: () =>
+          new ReadableStream<string>({
+            start(controller) {
+              textController = controller;
+            },
+          }),
+      } as never;
+    });
+
+    const requestAbort = new AbortController();
+    const response = handleAgentRouteStream(
+      { mode: "chat", message: "Teach me cells", messages: [] },
+      { signal: requestAbort.signal },
+    );
+    const reader = response.getReader();
+
+    await reader.read();
+    expect(mockedRun).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
+      maxTurns: 8,
+      stream: true,
+      signal: expect.any(AbortSignal),
+    });
+    const runSignal = mockedRun.mock.calls[0]?.[2]?.signal;
+
+    expect(runSignal?.aborted).toBe(false);
+    await reader.cancel();
+    expect(runSignal?.aborted).toBe(true);
   });
 });

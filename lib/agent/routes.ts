@@ -298,9 +298,13 @@ async function waitForStreamCompletion(streamedResult: unknown) {
   if (streamError) throw streamError;
 }
 
-async function runChatModeStream(request: z.infer<typeof chatAgentRequestSchema>, emit: (event: AgentStreamEvent) => void) {
+async function runChatModeStream(
+  request: z.infer<typeof chatAgentRequestSchema>,
+  emit: (event: AgentStreamEvent) => void,
+  signal: AbortSignal,
+) {
   const prepared = prepareChatMode(request);
-  const result = await run(prepared.agent, prepared.prompt, { maxTurns: 8, stream: true });
+  const result = await run(prepared.agent, prepared.prompt, { maxTurns: 8, stream: true, signal });
   await emitRunDeltas(result, emit);
   await waitForStreamCompletion(result);
   return finishChatMode(request, prepared.userMessage, result, prepared.createExperience);
@@ -309,9 +313,10 @@ async function runChatModeStream(request: z.infer<typeof chatAgentRequestSchema>
 async function runLearningRoomModeStream(
   request: z.infer<typeof learningRoomAgentRequestSchema>,
   emit: (event: AgentStreamEvent) => void,
+  signal: AbortSignal,
 ) {
   const prepared = prepareLearningRoomMode(request);
-  const result = await run(prepared.agent, prepared.prompt, { maxTurns: 6, stream: true });
+  const result = await run(prepared.agent, prepared.prompt, { maxTurns: 6, stream: true, signal });
   await emitRunDeltas(result, emit);
   await waitForStreamCompletion(result);
   return finishLearningRoomMode(request, prepared.userMessage, result, prepared.commandSink);
@@ -328,13 +333,47 @@ export async function handleAgentRoute(input: unknown) {
   return handleLearningRoomMode(request);
 }
 
-export function handleAgentRouteStream(input: unknown): ReadableStream<Uint8Array> {
+export function handleAgentRouteStream(input: unknown, options: { signal?: AbortSignal } = {}): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
+  const abortController = new AbortController();
+  const abort = () => {
+    if (!abortController.signal.aborted) {
+      abortController.abort();
+    }
+  };
+
+  if (options.signal?.aborted) {
+    abort();
+  } else {
+    options.signal?.addEventListener("abort", abort, { once: true });
+  }
+  let canceled = false;
 
   return new ReadableStream<Uint8Array>({
+    cancel() {
+      canceled = true;
+      abort();
+    },
     start(controller) {
       const emit = (event: AgentStreamEvent) => {
-        controller.enqueue(encoder.encode(encodeAgentStreamEvent(event)));
+        if (canceled || abortController.signal.aborted) return false;
+        try {
+          controller.enqueue(encoder.encode(encodeAgentStreamEvent(event)));
+          return true;
+        } catch {
+          canceled = true;
+          abort();
+          return false;
+        }
+      };
+      const close = () => {
+        if (canceled) return;
+        try {
+          controller.close();
+        } catch {
+          canceled = true;
+          abort();
+        }
       };
 
       emit({ type: "status", message: streamStatusForMode((input as { mode?: unknown } | null)?.mode) });
@@ -344,15 +383,18 @@ export function handleAgentRouteStream(input: unknown): ReadableStream<Uint8Arra
           requireOpenAiKey();
           const request = agentRouteRequestSchema.parse(input);
           const result = request.mode === "chat"
-            ? await runChatModeStream(request, emit)
-            : await runLearningRoomModeStream(request, emit);
+            ? await runChatModeStream(request, emit, abortController.signal)
+            : await runLearningRoomModeStream(request, emit, abortController.signal);
           emit(toDoneEvent(result));
         } catch (error) {
-          const message = makeErrorMessage(error);
-          emit({ type: "error", message });
-          emit(toErrorDoneEvent(error));
+          if (!abortController.signal.aborted) {
+            const message = makeErrorMessage(error);
+            emit({ type: "error", message });
+            emit(toErrorDoneEvent(error));
+          }
         } finally {
-          controller.close();
+          options.signal?.removeEventListener("abort", abort);
+          close();
         }
       })();
     },

@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     const wantsStream = stream === true || request.headers.get("accept")?.includes("text/event-stream");
 
     if (wantsStream) {
-      return new Response(handleAgentRouteStream(agentBody), {
+      return new Response(handleAgentRouteStream(agentBody, { signal: request.signal }), {
         headers: {
           "Content-Type": "text/event-stream; charset=utf-8",
           "Cache-Control": "no-cache, no-transform",
