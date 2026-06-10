@@ -144,7 +144,7 @@ function makeErrorMessage(error: unknown): string {
 }
 
 function streamStatusForMode(mode: "chat" | "learning_room" | unknown): string {
-  return mode === "learning_room" ? "Thinking..." : "Planning the lesson...";
+  return "Thinking...";
 }
 
 type AgentRouteResult = {
@@ -577,7 +577,7 @@ async function runChatModeStream(
   signal: AbortSignal,
 ) {
   const prepared = prepareChatMode(request);
-  emit({ type: "status", message: "Planning the lesson..." });
+  emit({ type: "status", message: "Thinking..." });
   const plannerResult = await run(prepared.plannerAgent, prepared.plannerPrompt, { maxTurns: 6, signal });
   const planned = prepared.lessonPlan.getResult();
 

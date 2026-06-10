@@ -762,7 +762,7 @@ describe("agent routes", () => {
       signal: expect.any(AbortSignal),
     });
     expect(events).toEqual([
-      { type: "status", message: "Planning the lesson..." },
+      { type: "status", message: "Thinking..." },
       {
         type: "done",
         message: "Let us reason through the cell membrane together.",
@@ -827,7 +827,7 @@ describe("agent routes", () => {
       signal: expect.any(AbortSignal),
     });
     expect(events).toEqual([
-      { type: "status", message: "Planning the lesson..." },
+      { type: "status", message: "Thinking..." },
       { type: "status", message: "Selected playground mode..." },
       { type: "status", message: "Building the interactive artifact..." },
       { type: "delta", delta: "Now explore " },
@@ -937,7 +937,7 @@ describe("agent routes", () => {
     const events = decodeAgentStreamEvents(await new Response(response).text());
 
     expect(events).toEqual([
-      { type: "status", message: "Planning the lesson..." },
+      { type: "status", message: "Thinking..." },
       { type: "error", message: "Model unavailable" },
       {
         type: "done",
