@@ -43,20 +43,36 @@ describe("threadRecords", () => {
       updatedAt: "2026-06-09T14:05:00.000Z",
     });
 
-    expect(
-      toMessageRecord({
-        id: "message-1",
-        role: "user",
-        content: "Teach me jet engines",
-        createdAt: "2026-06-09T14:00:00.000Z",
-      }, "thread-1"),
-    ).toMatchObject({
+    const normalMessageRecord = toMessageRecord({
+      id: "message-1",
+      role: "user",
+      content: "Teach me jet engines",
+      createdAt: "2026-06-09T14:00:00.000Z",
+    }, "thread-1");
+
+    expect(normalMessageRecord).toMatchObject({
       PK: "THREAD#thread-1",
       SK: "MESSAGE#2026-06-09T14:00:00.000Z#message-1",
       entityType: "message",
       threadId: "thread-1",
       role: "user",
       content: "Teach me jet engines",
+    });
+    expect(normalMessageRecord).not.toHaveProperty("artifactId");
+
+    expect(
+      toMessageRecord({
+        id: "message-2",
+        role: "assistant",
+        content: "Here is your room.",
+        createdAt: "2026-06-09T14:01:00.000Z",
+        artifactId: "artifact-1",
+      }, "thread-1"),
+    ).toMatchObject({
+      PK: "THREAD#thread-1",
+      SK: "MESSAGE#2026-06-09T14:01:00.000Z#message-2",
+      entityType: "message",
+      artifactId: "artifact-1",
     });
   });
 

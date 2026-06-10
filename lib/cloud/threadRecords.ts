@@ -86,7 +86,7 @@ export function toThreadSummary(record: ThreadSummaryRecord): PersistedThreadSum
 }
 
 export function toMessageRecord(message: ChatMessage, threadId: string): MessageRecord {
-  return {
+  const record: MessageRecord = {
     PK: threadPartitionKey(threadId),
     SK: messageKey(message.createdAt, message.id),
     entityType: "message",
@@ -95,8 +95,11 @@ export function toMessageRecord(message: ChatMessage, threadId: string): Message
     role: message.role,
     content: message.content,
     createdAt: message.createdAt,
-    artifactId: message.artifactId,
   };
+  if (message.artifactId !== undefined) {
+    record.artifactId = message.artifactId;
+  }
+  return record;
 }
 
 export function toChatMessage(record: MessageRecord): ChatMessage {
