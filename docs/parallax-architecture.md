@@ -6,7 +6,7 @@
 ![AWS IAM](https://img.shields.io/badge/AWS-IAM-FF9900?logo=amazonaws&logoColor=white)
 ![OpenAI](https://img.shields.io/badge/OpenAI-Agents%20SDK-412991?logo=openai&logoColor=white)
 
-Parallax is a chat-first STEM learning app. A single OpenAI Agents SDK agent handles normal conversation, creates sandboxed Three.js artifacts when useful, and controls the active learning room through tools.
+Parallax is a chat-first STEM learning app. OpenAI Agents SDK agents split the work into lesson planning, artifact building, and in-room tutoring. The Planner chooses the best lesson mode and can optionally ground niche or source-specific topics with Exa; the Builder creates a sandboxed Three.js artifact from that plan; the Tutor answers questions and controls the active learning room through tools.
 
 Parallax is deployed as a Next.js app on Vercel. The browser talks only to Vercel-hosted API routes; AWS credentials stay server-side in Vercel environment variables. DynamoDB stores chat thread state and artifact metadata, while S3 stores generated artifact payloads.
 
@@ -31,10 +31,14 @@ flowchart TD
 
   I --> M["User sends chat message"]
   M --> N["POST /api/agent mode: chat with userId + threadId"]
-  N --> O["Parallax Agent"]
+  N --> O["Planner Agent"]
   O -- normal chat --> P["Persist user + assistant messages in DynamoDB"]
   P --> Q["Assistant reply in active thread"]
-  O -- artifact needed --> R["create_experience tool"]
+  O -- optional grounding --> OR["research_stem_topic tool"]
+  OR --> O
+  O -- artifact needed --> LP["choose_lesson_plan tool"]
+  LP --> BA["Builder Agent"]
+  BA --> R["create_experience tool"]
   R --> S["Static artifact validation"]
   S -- invalid --> T["Persist/display validation error"]
   S -- valid --> U["Upload artifact HTML + sceneSource to S3"]
@@ -48,8 +52,8 @@ flowchart TD
   Z --> AB["component_selected / walkthrough_step_changed events"]
   AB --> AA
   AA --> AC["POST /api/agent mode: learning_room with artifact context"]
-  AC --> O
-  O -- command useful --> AD["send_artifact_command tool"]
+  AC --> TA["Tutor Agent"]
+  TA -- command useful --> AD["send_artifact_command tool"]
   AD --> Z
   AC --> AE["Persist room user + assistant messages in DynamoDB"]
   AE --> AA
@@ -73,7 +77,10 @@ flowchart LR
   end
 
   subgraph Agents[OpenAI Agents SDK]
-    Agent[Parallax Agent]
+    Planner[Planner Agent]
+    Builder[Builder Agent]
+    Tutor[Tutor Agent]
+    PlanTool[choose_lesson_plan]
     CreateTool[create_experience]
     ResearchTool[research_stem_topic]
     CommandTool[send_artifact_command]
@@ -88,9 +95,11 @@ flowchart LR
 
   Chat --> AgentAPI
   Chat --> Store
-  AgentAPI --> Agent
-  Agent --> ResearchTool
-  Agent --> CreateTool
+  AgentAPI --> Planner
+  Planner --> ResearchTool
+  Planner --> PlanTool
+  PlanTool --> Builder
+  Builder --> CreateTool
   CreateTool --> Validator
   Validator --> Template
   Template --> Chat
@@ -100,7 +109,8 @@ flowchart LR
   Frame --> Bridge
   Bridge --> Room
   Room --> AgentAPI
-  Agent --> CommandTool
+  AgentAPI --> Tutor
+  Tutor --> CommandTool
   CommandTool --> Bridge
 ```
 
@@ -113,7 +123,7 @@ flowchart LR
 | Amazon DynamoDB | Stores thread summaries, messages, and artifact metadata. | Vercel API routes |
 | Amazon S3 | Stores generated artifact `html` and `sceneSource` payloads. | Vercel API routes |
 | AWS IAM | Provides scoped access keys for Vercel functions. | Vercel environment variables |
-| OpenAI Agents SDK | Runs the Parallax Agent for chat, artifact generation, and room control. | Vercel API routes |
+| OpenAI Agents SDK | Runs the Planner, Builder, and Tutor agents for lesson planning, artifact generation, and room control. | Vercel API routes |
 
 
 ## Persistence Flow
@@ -129,14 +139,17 @@ flowchart LR
 ### Main Chat Message
 
 1. Browser posts to `POST /api/agent` with `mode: "chat"`, `userId`, `threadId`, and message history.
-2. Vercel function runs the Parallax Agent.
-3. If the response is normal chat, the route writes user and assistant messages to DynamoDB.
-4. If the agent creates an artifact, the route writes the user message to DynamoDB, uploads artifact `html` and `sceneSource` to S3, writes artifact metadata to DynamoDB, and writes the assistant message with `artifactId` to DynamoDB.
+2. Vercel function runs the Planner Agent with `research_stem_topic` and `choose_lesson_plan`.
+3. For normal chat, the Planner answers directly and the route writes user and assistant messages to DynamoDB.
+4. For an artifact request, the Planner chooses a `lessonMode`, writes a structured lesson plan, and optionally uses Exa through `research_stem_topic` for niche, current, patent, paper, product, or source-specific topics.
+5. Vercel function runs the Builder Agent with the lesson plan and `create_experience`.
+6. If artifact validation fails, the route persists/displays an assistant error message.
+7. If validation succeeds, the route writes the user message to DynamoDB, uploads artifact `html` and `sceneSource` to S3, writes artifact metadata to DynamoDB, and writes the assistant message with `artifactId` to DynamoDB.
 
 ### Learning Room Message
 
 1. Browser posts to `POST /api/agent` with `mode: "learning_room"`, active artifact context, `userId`, and `threadId`.
-2. Vercel function runs the Parallax Agent with room-control tools.
+2. Vercel function runs the Tutor Agent with room-control tools and active artifact context, including `lessonMode`, `interactionGoal`, `controls`, `sources`, components, walkthrough steps, selected component, and active step.
 3. Assistant text and any artifact commands return to the browser.
 4. User and assistant learning-room messages are persisted to DynamoDB with the active `artifactId`.
 
@@ -176,21 +189,59 @@ Learning room chat sends:
 }
 ```
 
-The route gives the same Parallax Agent different tools based on mode. Main chat gets `research_stem_topic` and `create_experience`. Learning room chat gets `send_artifact_command` plus active artifact context.
+The route uses different agent roles based on mode:
 
-Tool parameter schemas are also part of the API boundary. Keep them within the JSON Schema subset accepted by OpenAI tool validation. For example, source URLs are validated in Zod with `new URL(...)` instead of `z.string().url()` so the generated tool schema does not emit `format: "uri"`, which the OpenAI API rejects for function parameters.
+- **Planner Agent**: runs first in main chat. It decides whether an artifact is needed, whether Exa grounding is useful, and which lesson mode best fits the request.
+- **Builder Agent**: runs only when the Planner chooses an artifact. It receives the structured lesson plan and must call `create_experience`.
+- **Tutor Agent**: runs in learning-room mode. It receives active artifact context and may call `send_artifact_command`.
+
+Main chat tools:
+
+- `research_stem_topic`: optional Exa-backed source grounding for niche, current, patent, paper, product, or source-specific topics.
+- `choose_lesson_plan`: structured Planner handoff with `artifactNeeded`, `lessonMode`, `interactionGoal`, `sources`, `requiredComponents`, and `builderBrief`.
+- `create_experience`: structured Builder handoff with artifact metadata, generated scene code, components, walkthrough steps, and optional controls.
+
+Learning-room tools:
+
+- `send_artifact_command`: emits typed artifact commands such as `focus_component`, `go_to_step`, `explode`, `collapse`, `reset_camera`, and `toggle_labels`.
+
+Tool parameter schemas are also part of the API boundary. Keep them within the JSON Schema subset accepted by OpenAI tool validation. When adding fields, preserve the existing normalization pattern: OpenAI-facing schemas can use nullable values where the SDK expects them, then route/tool code normalizes to the internal optional shape.
 
 ## Artifact Contract
 
-The model does not generate the whole page. It generates `sceneSource` JavaScript plus metadata. The fixed runtime provides:
+The model does not generate the whole page. The Builder generates `sceneSource` JavaScript plus structured metadata through `create_experience`. The fixed runtime wraps that source in the app-owned HTML shell, injects safe globals, renders labels/chrome, and owns the parent/iframe bridge.
+
+The artifact metadata shape is:
+
+```txt
+topic
+title
+summary
+lessonMode = playground | guided_walkthrough
+interactionGoal?
+sources?
+controls?
+sceneSource
+components
+walkthroughSteps
+learningOutcomes?
+```
+
+The fixed runtime provides:
 
 - `THREE`, `scene`, `camera`, `renderer`, `root`, and `controls`
 - `registerComponent(id, label, object3D, metadata)`
+- `registerControl(descriptor, callback)` and alias `control(...)`
 - `setWalkthroughSteps(steps)`
 - `setStatus(message)`
 - `fitCameraTo(object3D, position?)`
 
-The validator rejects network calls, dynamic imports, markup injection, oversized code, scenes without at least three registered components, and scenes without walkthrough steps.
+`lessonMode` decides which teaching surface the artifact gets:
+
+- `playground`: for cause-and-effect exploration where the learner should manipulate variables. It must declare one or more `controls`, call `registerControl` for each declared control, and use an empty `walkthroughSteps` array. The runtime renders playground sliders/toggles inside the iframe and hides walkthrough buttons.
+- `guided_walkthrough`: for ordered systems, spatial tours, processes, or mechanisms. It must include walkthrough steps and must not declare controls or call `registerControl`. The runtime renders the walkthrough controls inside the iframe.
+
+The validator rejects network calls, dynamic imports, markup injection, oversized code, JavaScript syntax errors, scenes without at least three registered components, missing `setWalkthroughSteps` calls, metadata component ids that are not registered in source, and any mode-rule violation. For playground artifacts, it also rejects missing `registerControl` calls, controls registered under undeclared ids, and declared controls that are never registered.
 
 ## Message Contract
 
@@ -211,6 +262,8 @@ The parent sends commands back:
 - `explode`
 - `collapse`
 - `toggle_labels`
+
+`go_to_step`, `start_walkthrough`, and `pause_walkthrough` are mainly useful for `guided_walkthrough` artifacts. `playground` artifacts are usually controlled by runtime-rendered sliders/toggles plus Tutor explanations and component focus commands.
 
 ## DynamoDB Table
 
@@ -249,6 +302,13 @@ SK = ARTIFACT#<artifactId>
 entityType = artifact
 htmlS3Key = artifacts/<threadId>/<artifactId>/index.html
 sceneSourceS3Key = artifacts/<threadId>/<artifactId>/scene.js
+lessonMode = playground | guided_walkthrough
+interactionGoal?
+sources?
+controls?
+components
+walkthroughSteps
+learningOutcomes?
 ```
 
 ## S3 Bucket
@@ -377,8 +437,10 @@ aws s3api put-public-access-block \
 - **Proposal first**: the user sees the generated plan before entering.
 - **One-shot artifacts**: v1 creates the best complete experience in one pass instead of editing artifacts in place.
 - **Sandboxed iframe**: generated code runs in an iframe with a strict `postMessage` bridge.
-- **Fixed runtime, generated scene**: the app owns controls, labels, walkthrough UI, and validation.
-- **Single Parallax Agent**: one Agents SDK agent handles chat, artifact creation, and room control with mode-specific tools.
+- **Fixed runtime, generated scene**: the app owns labels, chrome, mode-aware controls, walkthrough UI, and validation.
+- **Adaptive lesson modes**: the Planner chooses between `playground` and `guided_walkthrough` instead of forcing every topic into a walkthrough.
+- **Planner, Builder, Tutor orchestration**: planning, artifact construction, and in-room teaching are separate Agents SDK roles with narrow tools.
+- **Planner-selected grounding**: Exa research is available to the Planner for patents, papers, current, niche, or source-specific topics, but ordinary STEM requests can proceed from model knowledge.
 - **Single agent endpoint**: `/api/agent` accepts a mode-discriminated payload instead of separate mode-specific routes.
 - **AWS-backed thread persistence**: DynamoDB stores thread summaries, messages, and artifact metadata; S3 stores generated artifact payloads.
 
