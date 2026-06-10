@@ -54,6 +54,8 @@ flowchart TD
   AA --> AC["POST /api/agent mode: learning_room with artifact context"]
   AC --> TA["Tutor Agent"]
   TA -- command useful --> AD["send_artifact_command tool"]
+  TA -- command useful --> AD["send_artifact_command tool"]
+  TA -- rebuild requested --> R
   AD --> Z
   AC --> AE["Persist room user + assistant messages in DynamoDB"]
   AE --> AA
@@ -149,9 +151,10 @@ flowchart LR
 ### Learning Room Message
 
 1. Browser posts to `POST /api/agent` with `mode: "learning_room"`, active artifact context, `userId`, and `threadId`.
-2. Vercel function runs the Tutor Agent with room-control tools and active artifact context, including `lessonMode`, `interactionGoal`, `controls`, `sources`, components, walkthrough steps, selected component, and active step.
-3. Assistant text and any artifact commands return to the browser.
-4. User and assistant learning-room messages are persisted to DynamoDB with the active `artifactId`.
+2. Vercel function runs the Tutor Agent with room-control tools and active artifact context, including `lessonMode`, `interactionGoal`, `controls`, `sources`, components, walkthrough steps, selected component, active step, and `sceneSource`.
+3. Assistant text, safe progress trace events, and any artifact commands return to the browser over the same SSE stream. Trace events summarize agent updates, reasoning-item milestones, and tool execution without exposing hidden chain-of-thought or large tool arguments.
+4. If the learner asks to rebuild or patch the scene, the Tutor creates a complete replacement artifact with `create_experience`; the browser switches the active room to that new artifact.
+5. User and assistant learning-room messages are persisted to DynamoDB with the relevant `artifactId`.
 
 ### Thread Switching
 
@@ -165,6 +168,8 @@ flowchart LR
 ## Agent API Contract
 
 The app has one agent endpoint: `POST /api/agent`.
+
+When `stream: true` or `Accept: text/event-stream` is used, the endpoint emits `status`, `trace`, `delta`, `error`, and `done` SSE events. `trace` events are UI-safe progress entries for agent/tool activity; final user-facing text still arrives through `delta` and `done`.
 
 Main chat sends:
 
@@ -193,7 +198,7 @@ The route uses different agent roles based on mode:
 
 - **Planner Agent**: runs first in main chat. It decides whether an artifact is needed, whether Exa grounding is useful, and which lesson mode best fits the request.
 - **Builder Agent**: runs only when the Planner chooses an artifact. It receives the structured lesson plan and must call `create_experience`.
-- **Tutor Agent**: runs in learning-room mode. It receives active artifact context and may call `send_artifact_command`.
+- **Tutor Agent**: runs in learning-room mode. It receives active artifact context and may call `send_artifact_command`. For explicit rebuild or patch requests, it may also call `create_experience` to create a complete replacement artifact.
 
 Main chat tools:
 
@@ -204,6 +209,9 @@ Main chat tools:
 Learning-room tools:
 
 - `send_artifact_command`: emits typed artifact commands such as `focus_component`, `go_to_step`, `explode`, `collapse`, `reset_camera`, and `toggle_labels`.
+- `create_experience`: available for explicit rebuild or patch requests. It creates a replacement artifact; the app still does not support in-place scene editing.
+
+Main chat also includes latest artifact context when available, so rebuild follow-ups like "fix that scene" can be planned as replacement artifacts.
 
 Tool parameter schemas are also part of the API boundary. Keep them within the JSON Schema subset accepted by OpenAI tool validation. When adding fields, preserve the existing normalization pattern: OpenAI-facing schemas can use nullable values where the SDK expects them, then route/tool code normalizes to the internal optional shape.
 
@@ -435,7 +443,7 @@ aws s3api put-public-access-block \
 
 - **Canvas-left learning room**: the artifact is the main stage; chat is contextual support.
 - **Proposal first**: the user sees the generated plan before entering.
-- **One-shot artifacts**: v1 creates the best complete experience in one pass instead of editing artifacts in place.
+- **One-shot artifacts**: v1 creates the best complete experience in one pass. Rebuild and patch requests create a new complete replacement artifact instead of editing an artifact in place.
 - **Sandboxed iframe**: generated code runs in an iframe with a strict `postMessage` bridge.
 - **Fixed runtime, generated scene**: the app owns labels, chrome, mode-aware controls, walkthrough UI, and validation.
 - **Adaptive lesson modes**: the Planner chooses between `playground` and `guided_walkthrough` instead of forcing every topic into a walkthrough.

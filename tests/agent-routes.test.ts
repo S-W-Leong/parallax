@@ -58,6 +58,8 @@ const { decodeAgentStreamEvents } = await import("@/lib/agent/streamProtocol");
 const { handleAgentRoute, handleAgentRouteStream, handleChatRoute } = await import("@/lib/agent/routes");
 const { run } = await import("@openai/agents");
 const mockedRun = vi.mocked(run);
+const { makeCreateExperienceToolSink } = await import("@/lib/agent/tools/createExperienceTool");
+const mockedMakeCreateExperienceToolSink = vi.mocked(makeCreateExperienceToolSink);
 const { getThreadStore } = await import("@/lib/cloud/threadStore");
 const mockedGetThreadStore = vi.mocked(getThreadStore);
 
@@ -90,6 +92,7 @@ function parseTutorContext(prompt: unknown) {
       sources: unknown[];
       walkthroughSteps: unknown[];
       components: unknown[];
+      sceneSource: string;
     };
     selectedComponent: { artifactId: string; id: string; label: string } | null;
     activeStep: { id: string; title: string; narration: string; targetComponentIds: string[] } | null;
@@ -143,6 +146,15 @@ const artifact: ArtifactRecord = {
   createdAt: "2026-06-09T13:00:00.000Z",
 };
 
+const replacementArtifact: ArtifactRecord = {
+  ...artifact,
+  id: "artifact-2",
+  title: "Inside a Corrected Cell",
+  summary: "A rebuilt model with corrected geometry.",
+  sceneSource: `${artifact.sceneSource}\n// corrected geometry`,
+  createdAt: "2026-06-09T13:05:00.000Z",
+};
+
 describe("agent routes", () => {
   const originalKey = process.env.OPENAI_API_KEY;
 
@@ -150,6 +162,7 @@ describe("agent routes", () => {
     process.env.OPENAI_API_KEY = "test-key";
     mockedRun.mockReset();
     mockedGetThreadStore.mockReset();
+    mockedMakeCreateExperienceToolSink.mockClear();
     createExperienceState.result = null;
     lessonPlanState.result = null;
     artifactCommandState.commands = [];
@@ -636,6 +649,94 @@ describe("agent routes", () => {
     })).rejects.toThrow(/threadId/i);
   });
 
+  it("lets learning-room requests create and persist a replacement artifact", async () => {
+    const appendMessage = vi.fn().mockResolvedValue(undefined);
+    const saveArtifact = vi.fn().mockResolvedValue(undefined);
+    mockedGetThreadStore.mockReturnValue({
+      createThread: vi.fn(),
+      listThreads: vi.fn(),
+      loadThread: vi.fn(),
+      archiveThread: vi.fn(),
+      appendMessage,
+      saveArtifact,
+    });
+    createExperienceState.result = { ok: true, artifact: replacementArtifact };
+    mockedRun.mockResolvedValueOnce({ finalOutput: "I rebuilt the room with corrected geometry." } as Awaited<ReturnType<typeof run>>);
+
+    const response = await handleAgentRoute({
+      mode: "learning_room",
+      threadId: "thread-1",
+      userId: "demo-1",
+      message: "Rebuild the scene with corrected cylinder geometry",
+      artifact,
+      messages: [],
+      selectedComponent: null,
+      activeStepId: "intro",
+    });
+
+    expect(response).toEqual({
+      message: "I rebuilt the room with corrected geometry.",
+      trace: ["Planning replacement scene", "Generating replacement 3D artifact", "Validating artifact contract"],
+      artifact: replacementArtifact,
+      commands: [],
+      error: null,
+    });
+    expect(saveArtifact).toHaveBeenCalledWith("demo-1", "thread-1", replacementArtifact);
+    expect(appendMessage).toHaveBeenCalledTimes(2);
+    expect(appendMessage.mock.calls[0][2]).toMatchObject({
+      role: "user",
+      content: "Rebuild the scene with corrected cylinder geometry",
+      artifactId: artifact.id,
+    });
+    expect(appendMessage.mock.calls[1][2]).toMatchObject({
+      role: "assistant",
+      content: "I rebuilt the room with corrected geometry.",
+      artifactId: replacementArtifact.id,
+    });
+  });
+
+  it("includes active scene source in the learning-room prompt for patch requests", async () => {
+    mockedRun.mockResolvedValueOnce({ finalOutput: "I can patch that." } as Awaited<ReturnType<typeof run>>);
+
+    await handleAgentRoute({
+      mode: "learning_room",
+      message: "Patch the scene source to fix the cylinder constructor",
+      artifact,
+      messages: [],
+      selectedComponent: null,
+      activeStepId: "intro",
+    });
+
+    const prompt = mockedRun.mock.calls[0]?.[1] as string;
+    expect(prompt).toContain('"sceneSource"');
+    expect(prompt).toContain(artifact.sceneSource);
+  });
+
+  it("includes the latest artifact context in chat prompts for rebuild follow-ups", async () => {
+    mockedRun.mockResolvedValueOnce({ finalOutput: "I can rebuild that." } as Awaited<ReturnType<typeof run>>);
+
+    await handleAgentRoute({
+      mode: "chat",
+      message: "Rebuild it with the corrected cylinder geometry",
+      messages: [
+        {
+          id: "message-1",
+          role: "assistant",
+          content: "I built a cell room.",
+          artifactId: artifact.id,
+          createdAt: "2026-06-09T13:01:00.000Z",
+        },
+      ],
+      artifacts: { [artifact.id]: artifact },
+      lastArtifactId: artifact.id,
+    });
+
+    const prompt = mockedRun.mock.calls[0]?.[1] as string;
+    expect(prompt).toContain("Latest artifact context");
+    expect(prompt).toContain(artifact.title);
+    expect(prompt).toContain(artifact.sceneSource);
+  });
+
   it("keeps the old chat route wrapper working", async () => {
     mockedRun.mockResolvedValueOnce({ finalOutput: "Old route still answers." } as Awaited<ReturnType<typeof run>>);
 
@@ -743,6 +844,90 @@ describe("agent routes", () => {
         error: null,
       },
     ]);
+  });
+
+  it("streams safe reasoning and tool execution trace events from the agent run", async () => {
+    createExperienceState.result = { ok: true, artifact: replacementArtifact };
+    const streamResult = {
+      finalOutput: "I built a corrected room.",
+      completed: Promise.resolve(),
+      error: null,
+      async *[Symbol.asyncIterator]() {
+        yield { type: "agent_updated_stream_event", agent: { name: "Parallax Agent" } };
+        yield {
+          type: "run_item_stream_event",
+          name: "reasoning_item_created",
+          item: {
+            type: "reasoning_item",
+            rawItem: {
+              type: "reasoning",
+              rawContent: [{ type: "reasoning_text", text: "private chain of thought should not leak" }],
+            },
+          },
+        };
+        yield {
+          type: "run_item_stream_event",
+          name: "tool_called",
+          item: {
+            type: "tool_call_item",
+            toolName: "create_experience",
+            rawItem: { type: "function_call", name: "create_experience", arguments: "{\"sceneSource\":\"very large source\"}" },
+          },
+        };
+        yield {
+          type: "run_item_stream_event",
+          name: "tool_output",
+          item: {
+            type: "tool_call_output_item",
+            rawItem: { type: "function_call_result", name: "create_experience", output: "{\"ok\":true,\"componentCount\":3}" },
+            output: { ok: true, componentCount: 3 },
+          },
+        };
+        yield {
+          type: "raw_model_stream_event",
+          data: {
+            event: {
+              type: "response.function_call_arguments.delta",
+              delta: "{\"sceneSource\":\"tool arguments should not stream as assistant text\"}",
+            },
+          },
+        };
+        yield { type: "raw_model_stream_event", data: { event: { type: "response.output_text.delta", delta: "I built " } } };
+        yield { type: "raw_model_stream_event", data: { event: { type: "response.output_text.delta", delta: "a corrected room." } } };
+      },
+    };
+    mockedRun.mockResolvedValueOnce(streamResult as never);
+
+    const response = handleAgentRouteStream({
+      mode: "learning_room",
+      message: "Fix this scene",
+      artifact,
+      messages: [],
+      selectedComponent: null,
+      activeStepId: "intro",
+    });
+    const events = decodeAgentStreamEvents(await new Response(response).text());
+
+    expect(events).toEqual([
+      { type: "status", message: "Thinking..." },
+      { type: "trace", entry: { kind: "agent", label: "Using Parallax Agent" } },
+      { type: "trace", entry: { kind: "reasoning", label: "Reasoning through next step" } },
+      { type: "trace", entry: { kind: "tool", label: "Calling create_experience", detail: "Executing tool" } },
+      { type: "trace", entry: { kind: "tool", label: "create_experience completed", detail: "Succeeded (3 components)" } },
+      { type: "delta", delta: "I built " },
+      { type: "delta", delta: "a corrected room." },
+      {
+        type: "done",
+        message: "I built a corrected room.",
+        trace: ["Planning replacement scene", "Generating replacement 3D artifact", "Validating artifact contract"],
+        artifact: replacementArtifact,
+        commands: [],
+        error: null,
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("private chain of thought");
+    expect(JSON.stringify(events)).not.toContain("very large source");
+    expect(JSON.stringify(events)).not.toContain("tool arguments should not stream as assistant text");
   });
 
   it("streams a done event with an error instead of crashing the stream", async () => {

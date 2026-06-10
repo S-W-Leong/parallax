@@ -21,6 +21,16 @@ const artifact: ArtifactRecord = {
   createdAt: "2026-06-09T13:00:00.000Z",
 };
 
+const rebuiltArtifact: ArtifactRecord = {
+  ...artifact,
+  id: "artifact-2",
+  title: "Inside a Rebuilt Cell",
+  walkthroughSteps: [
+    { id: "rebuilt-intro", title: "Rebuilt start", narration: "Begin in the rebuilt room.", targetComponentIds: ["nucleus"] },
+  ],
+  createdAt: "2026-06-09T13:05:00.000Z",
+};
+
 describe("session reducer", () => {
   it("creates a centered chat session by default", () => {
     expect(createEmptySession()).toMatchObject({
@@ -107,6 +117,26 @@ describe("session reducer", () => {
     });
   });
 
+  it("attaches streamed agent trace entries to the assistant draft", () => {
+    const started = sessionReducer(createEmptySession(), {
+      type: "assistant_draft_started",
+      id: "draft-1",
+      content: "Thinking...",
+      artifactId: undefined,
+    });
+    const traced = sessionReducer(started, {
+      type: "assistant_trace_event",
+      id: "draft-1",
+      entry: { kind: "tool", label: "Calling create_experience", detail: "Executing tool" },
+    });
+
+    expect(traced.messages[0]).toMatchObject({
+      id: "draft-1",
+      agentTrace: [{ kind: "tool", label: "Calling create_experience", detail: "Executing tool" }],
+      status: "streaming",
+    });
+  });
+
   it("keeps partial assistant text when streaming is stopped", () => {
     const started = sessionReducer(createEmptySession(), {
       type: "assistant_draft_started",
@@ -144,6 +174,46 @@ describe("session reducer", () => {
       id: "draft-1",
       content: "I built a cell room.",
       artifactId: artifact.id,
+      status: "complete",
+    });
+  });
+
+  it("switches the active learning room to a rebuilt artifact attached to a draft", () => {
+    const inRoom = sessionReducer(
+      sessionReducer(createEmptySession(), { type: "artifact_created", artifact, trace: [] }),
+      { type: "enter_experience", artifactId: artifact.id },
+    );
+    const withSelection = sessionReducer(
+      sessionReducer(inRoom, {
+        type: "component_selected",
+        component: { artifactId: artifact.id, id: "nucleus", label: "Nucleus" },
+      }),
+      { type: "enqueue_commands", commands: [{ type: "focus_component", componentId: "nucleus" }] },
+    );
+    const started = sessionReducer(withSelection, {
+      type: "assistant_draft_started",
+      id: "draft-1",
+      content: "Rebuilding...",
+      artifactId: artifact.id,
+    });
+
+    const attached = sessionReducer(started, {
+      type: "artifact_attached_to_message",
+      id: "draft-1",
+      artifact: rebuiltArtifact,
+      trace: ["Validated rebuilt artifact"],
+      content: "I rebuilt the room.",
+    });
+
+    expect(attached.activeArtifactId).toBe(rebuiltArtifact.id);
+    expect(attached.lastArtifactId).toBe(rebuiltArtifact.id);
+    expect(attached.activeStepId).toBe("rebuilt-intro");
+    expect(attached.selectedComponent).toBeNull();
+    expect(attached.pendingCommands).toEqual([]);
+    expect(attached.messages.at(-1)).toMatchObject({
+      id: "draft-1",
+      content: "I rebuilt the room.",
+      artifactId: rebuiltArtifact.id,
       status: "complete",
     });
   });

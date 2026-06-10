@@ -101,6 +101,12 @@ export const selectedComponentSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const agentTraceEntrySchema = z.object({
+  kind: z.enum(["agent", "reasoning", "tool", "handoff"]),
+  label: z.string().min(1),
+  detail: z.string().min(1).optional(),
+});
+
 export const chatMessageSchema = z.object({
   id: z.string().min(1),
   role: z.enum(["user", "assistant", "system"]),
@@ -108,6 +114,7 @@ export const chatMessageSchema = z.object({
   createdAt: z.string().min(1),
   artifactId: z.string().optional(),
   status: z.enum(["streaming", "complete", "stopped"]).optional(),
+  agentTrace: z.array(agentTraceEntrySchema).optional(),
 });
 
 export const focusComponentCommandSchema = z.object({
@@ -201,6 +208,7 @@ export type LessonMode = z.infer<typeof lessonModeSchema>;
 export type ArtifactSource = z.infer<typeof artifactSourceSchema>;
 export type ArtifactControl = z.infer<typeof artifactControlSchema>;
 export type SelectedComponent = z.infer<typeof selectedComponentSchema>;
+export type AgentTraceEntry = z.infer<typeof agentTraceEntrySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ArtifactCommand = z.infer<typeof artifactCommandSchema>;
 export type ArtifactEvent = z.infer<typeof artifactEventSchema>;

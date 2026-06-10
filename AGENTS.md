@@ -74,12 +74,12 @@ The sandboxed iframe and parent communicate only through typed `postMessage`. Sc
 - Artifact to parent events: `artifact_ready`, `component_selected`, `walkthrough_step_changed`, `artifact_error`.
 - Parent to artifact commands: `focus_component`, `go_to_step`, `start_walkthrough`, `pause_walkthrough`, `reset_camera`, `explode`, `collapse`, `toggle_labels`.
 
-The Tutor's `send_artifact_command` tool emits these commands; the route returns them, the reducer enqueues them (`enqueue_commands` / `clear_pending_commands`), and `LearningRoom`/`ArtifactFrame` post them into the iframe.
+The Tutor's `send_artifact_command` tool emits these commands; the route returns them, the reducer enqueues them (`enqueue_commands` / `clear_pending_commands`), and `LearningRoom`/`ArtifactFrame` post them into the iframe. The learning-room agent can also call `create_experience` for rebuild/patch requests; those requests create a complete replacement artifact and the reducer swaps the active room to the new artifact.
 
 ### Key Conventions
 
 - **Zod everywhere at boundaries.** `artifactTypes.ts` defines schemas used by both the tool input layer and runtime validation. Note the tool input schemas (`lib/agent/tools/*`) use `.nullable()` (the Agents SDK requires nullable over optional) and are then normalized to the internal `optional`/`undefined` shape -- see `normalizeToolInput` in `createExperienceTool.ts`. Follow that pattern when adding tool params.
-- **One-shot artifacts (v1).** The Orchestrator builds the complete experience in a single `create_experience` call; there is no in-place artifact editing.
+- **One-shot artifacts (v1).** The Orchestrator builds the complete experience in a single `create_experience` call; there is no in-place artifact editing. Rebuild/patch requests generate a complete replacement artifact instead.
 - Path alias `@/*` maps to the repo root (configured in both `tsconfig.json` and `vitest.config.ts`).
 - TypeScript is `strict`. Dependencies are pinned to `latest` in `package.json`.
 
