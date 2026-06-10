@@ -140,7 +140,7 @@ export function ParallaxArtifactApp() {
     artifactId?: string;
     initialDraft: string;
   }) {
-    if (busy) return;
+    if (pendingRequestRef.current) return;
 
     const requestId = makeClientId("request");
     const draftId = makeClientId("draft");
