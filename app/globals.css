@@ -131,6 +131,10 @@ a {
   background-size: 22px 22px;
 }
 
+.mobile-sidebar-button {
+  display: none;
+}
+
 .app-sidebar {
   position: sticky;
   top: 0;
@@ -1767,5 +1771,119 @@ a {
 
   .walkthrough-strip {
     min-height: 82px;
+  }
+}
+
+@media (max-width: 760px) {
+  html,
+  body {
+    height: auto;
+    min-height: 100%;
+    overflow: auto;
+  }
+
+  .app-shell,
+  .app-shell.sidebar-pinned,
+  .app-shell.is-learning,
+  .app-shell.sidebar-pinned.is-learning {
+    min-height: 100vh;
+    min-height: 100dvh;
+    height: auto;
+    display: block;
+    overflow: visible;
+  }
+
+  .mobile-sidebar-button {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 45;
+    display: inline-flex;
+  }
+
+  .thread-sidebar,
+  .thread-sidebar:hover,
+  .thread-sidebar:focus-within,
+  .thread-sidebar.is-pinned {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(300px, calc(100vw - 32px));
+    height: 100vh;
+    height: 100dvh;
+    transform: translateX(-105%);
+    transition: transform 160ms ease;
+    z-index: 50;
+  }
+
+  .thread-sidebar.is-mobile-open {
+    transform: translateX(0);
+  }
+
+  .thread-sidebar header,
+  .thread-sidebar:hover header,
+  .thread-sidebar:focus-within header,
+  .thread-sidebar.is-pinned header {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .thread-sidebar .rail-actions,
+  .thread-sidebar:hover .rail-actions,
+  .thread-sidebar:focus-within .rail-actions,
+  .thread-sidebar.is-pinned .rail-actions {
+    flex-direction: row;
+  }
+
+  .thread-sidebar .rail-label,
+  .thread-sidebar .thread-labels,
+  .thread-sidebar .archive-thread-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .thread-sidebar:not(:hover):not(:focus-within):not(.is-pinned) .thread-item {
+    grid-template-columns: minmax(0, 1fr) 32px;
+  }
+
+  .thread-sidebar:not(:hover):not(:focus-within):not(.is-pinned) .archive-thread-button {
+    display: inline-flex;
+  }
+
+  .chat-home-shell {
+    min-height: 100vh;
+    min-height: 100dvh;
+    height: auto;
+  }
+
+  .chat-scroll-region {
+    padding: 58px 12px 14px;
+  }
+
+  .chat-composer-region {
+    position: sticky;
+    bottom: 0;
+    padding: 10px 12px 14px;
+  }
+
+  .starter-prompts {
+    grid-template-columns: 1fr;
+  }
+
+  .learning-room-shell {
+    min-height: 100vh;
+    min-height: 100dvh;
+    height: auto;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    overflow: visible;
+    padding-top: 44px;
+  }
+
+  .learning-canvas-area {
+    min-height: 70vh;
+  }
+
+  .learning-room-shell .room-chat {
+    min-height: 60vh;
   }
 }

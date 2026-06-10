@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Menu } from "lucide-react";
 import type { ArtifactCommand, ArtifactRecord, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 import { decodeAgentStreamEvents, type AgentStreamEvent } from "@/lib/agent/streamProtocol";
 import { ChatHome } from "@/components/app/ChatHome";
@@ -27,6 +28,7 @@ export function ParallaxArtifactApp() {
   const { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread } = useThreadSession();
   const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null);
   const [sidebarPinned, setSidebarPinned] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const pendingRequestRef = useRef<PendingRequest | null>(null);
   const busy = Boolean(pendingRequest);
   const activeArtifact = state.activeArtifactId ? state.artifacts[state.activeArtifactId] : null;
@@ -259,12 +261,17 @@ export function ParallaxArtifactApp() {
           threads={threads}
           activeThreadId={activeThreadId}
           pinned={sidebarPinned}
+          mobileOpen={mobileSidebarOpen}
           actionsDisabled={busy}
           onTogglePinned={() => setSidebarPinned((value) => !value)}
+          onCloseMobile={() => setMobileSidebarOpen(false)}
           onCreateThread={createThreadIfIdle}
           onSelectThread={selectThreadIfIdle}
           onArchiveThread={archiveThreadIfIdle}
         />
+        <button className="mobile-sidebar-button icon-button" type="button" onClick={() => setMobileSidebarOpen(true)} aria-label="Open chats">
+          <Menu size={18} />
+        </button>
 
         <LearningRoom
           artifact={activeArtifact}
@@ -298,12 +305,17 @@ export function ParallaxArtifactApp() {
         threads={threads}
         activeThreadId={activeThreadId}
         pinned={sidebarPinned}
+        mobileOpen={mobileSidebarOpen}
         actionsDisabled={busy}
         onTogglePinned={() => setSidebarPinned((value) => !value)}
+        onCloseMobile={() => setMobileSidebarOpen(false)}
         onCreateThread={createThreadIfIdle}
         onSelectThread={selectThreadIfIdle}
         onArchiveThread={archiveThreadIfIdle}
       />
+      <button className="mobile-sidebar-button icon-button" type="button" onClick={() => setMobileSidebarOpen(true)} aria-label="Open chats">
+        <Menu size={18} />
+      </button>
 
       <ChatHome
         messages={state.messages}

@@ -7,8 +7,10 @@ type ThreadSidebarProps = {
   threads: PersistedThreadSummary[];
   activeThreadId: string | null;
   pinned: boolean;
+  mobileOpen: boolean;
   actionsDisabled?: boolean;
   onTogglePinned: () => void;
+  onCloseMobile: () => void;
   onCreateThread: () => void;
   onSelectThread: (threadId: string) => void;
   onArchiveThread: (threadId: string) => void;
@@ -24,14 +26,18 @@ export function ThreadSidebar({
   threads,
   activeThreadId,
   pinned,
+  mobileOpen,
   actionsDisabled = false,
   onTogglePinned,
+  onCloseMobile,
   onCreateThread,
   onSelectThread,
   onArchiveThread,
 }: ThreadSidebarProps) {
+  const sidebarClass = ["thread-sidebar", pinned ? "is-pinned" : "", mobileOpen ? "is-mobile-open" : ""].filter(Boolean).join(" ");
+
   return (
-    <aside className={pinned ? "thread-sidebar is-pinned" : "thread-sidebar"}>
+    <aside className={sidebarClass}>
       <header>
         <div className="rail-brand">
           <span className="rail-logo" aria-hidden="true">
@@ -49,7 +55,17 @@ export function ThreadSidebar({
           >
             {pinned ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
           </button>
-          <button className="icon-button" type="button" onClick={onCreateThread} disabled={actionsDisabled} aria-label="New chat" title="New chat">
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => {
+              onCreateThread();
+              onCloseMobile();
+            }}
+            disabled={actionsDisabled}
+            aria-label="New chat"
+            title="New chat"
+          >
             <MessageSquarePlus size={18} />
           </button>
         </div>
@@ -62,7 +78,10 @@ export function ThreadSidebar({
               <button
                 className="thread-select"
                 type="button"
-                onClick={() => onSelectThread(thread.id)}
+                onClick={() => {
+                  onSelectThread(thread.id);
+                  onCloseMobile();
+                }}
                 disabled={actionsDisabled}
                 aria-current={isActive ? "page" : undefined}
                 title={thread.title}
@@ -79,6 +98,7 @@ export function ThreadSidebar({
                 onClick={(event) => {
                   event.stopPropagation();
                   onArchiveThread(thread.id);
+                  onCloseMobile();
                 }}
                 disabled={actionsDisabled}
                 aria-label={`Archive ${thread.title}`}
