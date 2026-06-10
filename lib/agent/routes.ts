@@ -11,6 +11,7 @@ import {
 } from "@/lib/artifacts/artifactTypes";
 import { getThreadStore } from "@/lib/cloud/threadStore";
 import type { AgentActivityEvent, AgentActivityEmitter } from "./activity";
+import { defaultAgentLogger, type AgentLogger } from "./logger";
 import { encodeAgentStreamEvent, type AgentStreamEvent } from "./streamProtocol";
 import { makeGuideAgent } from "./agents";
 import { ThreadAgentSession } from "./threadAgentSession";
@@ -176,6 +177,12 @@ function streamStatusForMode(mode: "chat" | "learning_room" | unknown): string {
   return "Thinking...";
 }
 
+type AgentRouteOptions = {
+  signal?: AbortSignal;
+  logger?: AgentLogger;
+  requestId?: string;
+};
+
 type AgentRouteResult = {
   message: string;
   trace?: string[];
@@ -207,8 +214,54 @@ function toErrorDoneEvent(error: unknown): AgentStreamEvent {
   };
 }
 
+function makeRequestId(): string {
+  return `agent-${crypto.randomUUID()}`;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object");
+}
+
+function logContextFromInput(input: unknown): Record<string, string | boolean | null | undefined> {
+  if (!isRecord(input)) return {};
+
+  const mode = typeof input.mode === "string" ? input.mode : undefined;
+  const userId = typeof input.userId === "string" ? input.userId : undefined;
+  const threadId = typeof input.threadId === "string" ? input.threadId : undefined;
+  const activeArtifactId = typeof input.activeArtifactId === "string" ? input.activeArtifactId : undefined;
+  const lastArtifactId = typeof input.lastArtifactId === "string" ? input.lastArtifactId : undefined;
+  const artifact = isRecord(input.artifact) ? input.artifact : null;
+  const artifactId = typeof artifact?.id === "string" ? artifact.id : undefined;
+
+  return {
+    mode,
+    userId,
+    threadId,
+    activeArtifactId,
+    lastArtifactId,
+    artifactId,
+    visibleArtifact: Boolean(artifact),
+  };
+}
+
+function logActivity(logger: AgentLogger, activity: AgentActivityEvent) {
+  logger.info("agent.activity", {
+    activityType: activity.type,
+    toolName: "toolName" in activity ? activity.toolName : undefined,
+    phase: "phase" in activity ? activity.phase : undefined,
+    agentName: "agentName" in activity ? activity.agentName : undefined,
+    ok: "ok" in activity ? activity.ok : undefined,
+  });
+}
+
+function logResultFields(result: AgentRouteResult): Record<string, string | number | boolean | null | undefined> {
+  return {
+    ok: result.error ? false : true,
+    artifactId: result.artifact?.id,
+    commandCount: result.commands?.length ?? 0,
+    traceCount: result.trace?.length ?? 0,
+    error: result.error ?? undefined,
+  };
 }
 
 function stringProperty(value: unknown, key: string): string | null {
@@ -383,11 +436,14 @@ async function* readTextChunks(readable: unknown): AsyncIterable<string> {
   }
 }
 
-async function emitRunStreamEvents(streamedResult: unknown, emit: (event: AgentStreamEvent) => void) {
+async function emitRunStreamEvents(streamedResult: unknown, emit: (event: AgentStreamEvent) => void, logger: AgentLogger) {
   if (typeof (streamedResult as AsyncIterable<unknown>)?.[Symbol.asyncIterator] === "function") {
     for await (const event of streamedResult as AsyncIterable<unknown>) {
       const activity = activityFromRunStreamEvent(event);
-      if (activity) emit({ type: "activity", activity });
+      if (activity) {
+        logActivity(logger, activity);
+        emit({ type: "activity", activity });
+      }
 
       const delta = extractDeltaFromStreamEvent(event);
       if (delta) emit({ type: "delta", delta });
@@ -459,10 +515,14 @@ async function finishGuideMode(
   };
 }
 
-async function handleGuideMode(request: z.infer<typeof agentRouteRequestSchema>, signal?: AbortSignal) {
+async function handleGuideMode(request: z.infer<typeof agentRouteRequestSchema>, signal?: AbortSignal, logger?: AgentLogger) {
   const activeArtifact = activeArtifactForGuide(request);
   const userMessage = makeMessage("user", request.message, activeArtifact?.id);
-  const buildArtifact = makeBuildLearningArtifactToolSink();
+  const buildArtifact = makeBuildLearningArtifactToolSink(logger
+    ? {
+        onActivity: (activity) => logActivity(logger, activity),
+      }
+    : {});
   const commandSink = makeSendArtifactCommandSink();
   const tools = activeArtifact
     ? [makeResearchStemTopicTool(), buildArtifact.tool, commandSink.tool]
@@ -481,10 +541,12 @@ async function runGuideModeStream(
   request: z.infer<typeof agentRouteRequestSchema>,
   emit: (event: AgentStreamEvent) => void,
   signal: AbortSignal,
+  logger: AgentLogger,
 ) {
   const activeArtifact = activeArtifactForGuide(request);
   const userMessage = makeMessage("user", request.message, activeArtifact?.id);
   const emitActivity: AgentActivityEmitter = (activity) => {
+    logActivity(logger, activity);
     emit({ type: "activity", activity });
   };
   const buildArtifact = makeBuildLearningArtifactToolSink({ onActivity: emitActivity });
@@ -499,21 +561,44 @@ async function runGuideModeStream(
     signal,
     session: makeThreadSession(request.userId, request.threadId),
   });
-  await emitRunStreamEvents(result, emit);
+  await emitRunStreamEvents(result, emit, logger);
   await waitForStreamCompletion(result);
   return finishGuideMode(request, result, userMessage, activeArtifact, buildArtifact, commandSink);
 }
 
-export async function handleAgentRoute(input: unknown) {
-  requireOpenAiKey();
-  const request = agentRouteRequestSchema.parse(input);
+export async function handleAgentRoute(input: unknown, options: Omit<AgentRouteOptions, "signal"> = {}) {
+  const requestId = options.requestId ?? makeRequestId();
+  const logger = (options.logger ?? defaultAgentLogger).child({ requestId });
+  const startedAt = Date.now();
+  logger.info("agent.request.started", logContextFromInput(input));
 
-  return handleGuideMode(request);
+  try {
+    requireOpenAiKey();
+    const request = agentRouteRequestSchema.parse(input);
+    logger.info("agent.run.started", logContextFromInput(request));
+    const result = await handleGuideMode(request, undefined, logger);
+    logger.info("agent.request.completed", {
+      ...logContextFromInput(request),
+      ...logResultFields(result),
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
+  } catch (error) {
+    logger.error("agent.request.failed", {
+      ...logContextFromInput(input),
+      error: makeErrorMessage(error),
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
 }
 
-export function handleAgentRouteStream(input: unknown, options: { signal?: AbortSignal } = {}): ReadableStream<Uint8Array> {
+export function handleAgentRouteStream(input: unknown, options: AgentRouteOptions = {}): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const abortController = new AbortController();
+  const requestId = options.requestId ?? makeRequestId();
+  const logger = (options.logger ?? defaultAgentLogger).child({ requestId });
+  const startedAt = Date.now();
   const abort = () => {
     if (!abortController.signal.aborted) {
       abortController.abort();
@@ -555,16 +640,28 @@ export function handleAgentRouteStream(input: unknown, options: { signal?: Abort
       };
 
       emit({ type: "status", message: streamStatusForMode((input as { mode?: unknown } | null)?.mode) });
+      logger.info("agent.request.started", logContextFromInput(input));
 
       void (async () => {
         try {
           requireOpenAiKey();
           const request = agentRouteRequestSchema.parse(input);
-          const result = await runGuideModeStream(request, emit, abortController.signal);
+          logger.info("agent.run.started", logContextFromInput(request));
+          const result = await runGuideModeStream(request, emit, abortController.signal, logger);
+          logger.info("agent.request.completed", {
+            ...logContextFromInput(request),
+            ...logResultFields(result),
+            durationMs: Date.now() - startedAt,
+          });
           emit(toDoneEvent(result));
         } catch (error) {
           if (!abortController.signal.aborted) {
             const message = makeErrorMessage(error);
+            logger.error("agent.request.failed", {
+              ...logContextFromInput(input),
+              error: message,
+              durationMs: Date.now() - startedAt,
+            });
             emit({ type: "error", message });
             emit(toErrorDoneEvent(error));
           }

@@ -42,6 +42,7 @@ vi.mock("@/lib/cloud/threadStore", () => {
 });
 
 const { decodeAgentStreamEvents } = await import("@/lib/agent/streamProtocol");
+const { createAgentLogger } = await import("@/lib/agent/logger");
 const { handleAgentRoute, handleAgentRouteStream, handleChatRoute, handleTutorRoute } = await import("@/lib/agent/routes");
 const { run } = await import("@openai/agents");
 const mockedRun = vi.mocked(run);
@@ -294,6 +295,8 @@ describe("agent routes", () => {
   });
 
   it("streams Guide deltas and emits the final artifact result", async () => {
+    const logEntries: Array<Record<string, unknown>> = [];
+    mockedGetThreadStore.mockReturnValue(makeStore());
     const streamedResult = {
       async *[Symbol.asyncIterator]() {
         yield { type: "agent_updated_stream_event", agent: { name: "Parallax Guide" } };
@@ -321,11 +324,19 @@ describe("agent routes", () => {
       artifact: replacementArtifact,
     };
 
-    const stream = handleAgentRouteStream({
-      mode: "chat",
-      message: "Build a corrected room",
-      messages: [],
-    });
+    const stream = handleAgentRouteStream(
+      {
+        mode: "chat",
+        message: "Build a corrected room",
+        messages: [],
+        threadId: "thread-1",
+        userId: "demo-1",
+      },
+      {
+        logger: createAgentLogger({ sink: (entry) => logEntries.push(entry) }),
+        requestId: "request-test",
+      },
+    );
     const events = decodeAgentStreamEvents(await new Response(stream).text());
 
     expect(events).toEqual([
@@ -350,16 +361,44 @@ describe("agent routes", () => {
         error: null,
       },
     ]);
+    expect(logEntries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: "agent.request.started",
+        requestId: "request-test",
+        mode: "chat",
+        threadId: "thread-1",
+        userId: "demo-1",
+      }),
+      expect.objectContaining({
+        event: "agent.activity",
+        requestId: "request-test",
+        activityType: "tool.started",
+        toolName: "build_learning_artifact",
+      }),
+      expect.objectContaining({
+        event: "agent.request.completed",
+        requestId: "request-test",
+        mode: "chat",
+        ok: true,
+      }),
+    ]));
   });
 
   it("streams a done event with an error instead of crashing the stream", async () => {
+    const logEntries: Array<Record<string, unknown>> = [];
     mockedRun.mockRejectedValueOnce(new Error("Model unavailable"));
 
-    const stream = handleAgentRouteStream({
-      mode: "chat",
-      message: "Teach me cells",
-      messages: [],
-    });
+    const stream = handleAgentRouteStream(
+      {
+        mode: "chat",
+        message: "Teach me cells",
+        messages: [],
+      },
+      {
+        logger: createAgentLogger({ sink: (entry) => logEntries.push(entry) }),
+        requestId: "request-error",
+      },
+    );
     const events = decodeAgentStreamEvents(await new Response(stream).text());
 
     expect(events).toEqual([
@@ -367,6 +406,13 @@ describe("agent routes", () => {
       { type: "error", message: "Model unavailable" },
       { type: "done", message: "Model unavailable", trace: [], artifact: null, commands: [], error: "Model unavailable" },
     ]);
+    expect(logEntries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: "agent.request.failed",
+        requestId: "request-error",
+        error: "Model unavailable",
+      }),
+    ]));
   });
 
   it("aborts the Guide streaming run when the response stream is canceled", async () => {
