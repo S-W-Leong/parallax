@@ -211,6 +211,16 @@ export function ParallaxArtifactApp() {
     dispatch({ type: "component_selected", component });
   }
 
+  function goToWalkthroughOffset(offset: number) {
+    if (!activeArtifact || !state.activeStepId) return;
+    const currentIndex = activeArtifact.walkthroughSteps.findIndex((step) => step.id === state.activeStepId);
+    if (currentIndex === -1) return;
+    const target = activeArtifact.walkthroughSteps[currentIndex + offset];
+    if (!target) return;
+    dispatch({ type: "step_changed", stepId: target.id, title: target.title });
+    dispatch({ type: "enqueue_commands", commands: [{ type: "go_to_step", stepId: target.id }] });
+  }
+
   function resetSession() {
     if (pendingRequestRef.current) return;
     void createThread();
@@ -244,24 +254,41 @@ export function ParallaxArtifactApp() {
 
   if (state.mode === "learning_room" && activeArtifact) {
     return (
-      <LearningRoom
-        artifact={activeArtifact}
-        messages={state.messages}
-        artifacts={state.artifacts}
-        trace={state.trace}
-        pendingCommands={state.pendingCommands}
-        selectedComponent={state.selectedComponent}
-        busy={busy}
-        onStopResponse={stopResponse}
-        onExit={() => dispatch({ type: "exit_experience" })}
-        onResetSession={resetSession}
-        onLearningRoomMessage={sendLearningRoomMessage}
-        onCommandsFlushed={() => dispatch({ type: "clear_pending_commands" })}
-        onComponentSelected={selectComponent}
-        onStepChanged={(stepId, title) => dispatch({ type: "step_changed", stepId, title })}
-        onArtifactError={(message) => dispatch({ type: "artifact_error", message })}
-        onEnterExperience={enterExperience}
-      />
+      <main className={sidebarPinned ? "app-shell sidebar-pinned is-learning" : "app-shell is-learning"}>
+        <ThreadSidebar
+          threads={threads}
+          activeThreadId={activeThreadId}
+          pinned={sidebarPinned}
+          actionsDisabled={busy}
+          onTogglePinned={() => setSidebarPinned((value) => !value)}
+          onCreateThread={createThreadIfIdle}
+          onSelectThread={selectThreadIfIdle}
+          onArchiveThread={archiveThreadIfIdle}
+        />
+
+        <LearningRoom
+          artifact={activeArtifact}
+          messages={state.messages}
+          artifacts={state.artifacts}
+          trace={state.trace}
+          pendingCommands={state.pendingCommands}
+          selectedComponent={state.selectedComponent}
+          activeStepId={state.activeStepId}
+          busy={busy}
+          onStop={stopResponse}
+          onStopResponse={stopResponse}
+          onExit={() => dispatch({ type: "exit_experience" })}
+          onResetSession={resetSession}
+          onLearningRoomMessage={sendLearningRoomMessage}
+          onPreviousStep={() => goToWalkthroughOffset(-1)}
+          onNextStep={() => goToWalkthroughOffset(1)}
+          onCommandsFlushed={() => dispatch({ type: "clear_pending_commands" })}
+          onComponentSelected={selectComponent}
+          onStepChanged={(stepId, title) => dispatch({ type: "step_changed", stepId, title })}
+          onArtifactError={(message) => dispatch({ type: "artifact_error", message })}
+          onEnterExperience={enterExperience}
+        />
+      </main>
     );
   }
 

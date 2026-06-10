@@ -155,13 +155,11 @@ export function sessionReducer(state: LearningSession, action: SessionAction): L
       return {
         ...state,
         selectedComponent: action.component,
-        messages: [...state.messages, message("system", `Selected: ${action.component.label}`, action.component.artifactId)],
       };
     case "step_changed":
       return {
         ...state,
         activeStepId: action.stepId,
-        messages: [...state.messages, message("system", `Walkthrough: ${action.title}`, state.activeArtifactId ?? undefined)],
       };
     case "artifact_error":
       return { ...state, messages: [...state.messages, message("system", `Artifact error: ${action.message}`, state.activeArtifactId ?? undefined)] };

@@ -1,11 +1,12 @@
 "use client";
 
-import { Braces, CheckCircle2, Crosshair, ListChecks, LogOut, MessageSquare, RefreshCcw, RotateCcw } from "lucide-react";
+import { LogOut, MessageSquare, RefreshCcw } from "lucide-react";
 import type { ArtifactRecord, ChatMessage, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 import type { ArtifactCommand } from "@/lib/artifacts/messageBridge";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatThread } from "@/components/chat/ChatThread";
 import { ArtifactFrame } from "./ArtifactFrame";
+import { WalkthroughStrip } from "./WalkthroughStrip";
 
 type LearningRoomProps = {
   artifact: ArtifactRecord;
@@ -14,11 +15,15 @@ type LearningRoomProps = {
   trace: string[];
   pendingCommands: ArtifactCommand[];
   selectedComponent: SelectedComponent | null;
+  activeStepId: string | null;
   busy: boolean;
+  onStop?: () => void;
   onStopResponse: () => void;
   onExit: () => void;
   onResetSession: () => void;
   onLearningRoomMessage: (message: string) => void;
+  onPreviousStep: () => void;
+  onNextStep: () => void;
   onCommandsFlushed: () => void;
   onComponentSelected: (component: SelectedComponent) => void;
   onStepChanged: (stepId: string, title: string) => void;
@@ -33,38 +38,38 @@ export function LearningRoom({
   trace,
   pendingCommands,
   selectedComponent,
+  activeStepId,
   busy,
+  onStop,
   onStopResponse,
   onExit,
   onResetSession,
   onLearningRoomMessage,
+  onPreviousStep,
+  onNextStep,
   onCommandsFlushed,
   onComponentSelected,
   onStepChanged,
   onArtifactError,
   onEnterExperience,
 }: LearningRoomProps) {
-  const selectedMetadata = selectedComponent?.metadata ? Object.entries(selectedComponent.metadata) : [];
-  const roomMessages = messages.filter((message) => message.artifactId === artifact.id);
+  const stopHandler = onStop ?? onStopResponse;
 
   return (
-    <main className="learning-room">
-      <section className="room-main">
-        <header className="room-topbar">
+    <section className="learning-room-shell" aria-label={`${artifact.title} learning room`}>
+      <section className="learning-canvas-area">
+        <header className="learning-room-header">
           <div>
-            <p className="eyebrow">Learning room / sandboxed artifact</p>
+            <p className="eyebrow">Learning room</p>
             <h1>{artifact.title}</h1>
           </div>
-          <div className="topbar-actions">
-            <span className="pill accent">VALIDATED</span>
-            <span className="pill">COMPONENTS {artifact.components.length}</span>
-            <button className="icon-button" onClick={onExit} aria-label="Exit experience">
-              <LogOut size={18} />
-            </button>
-          </div>
+          {selectedComponent ? (
+            <span className="selected-chip" title={selectedComponent.id}>
+              {selectedComponent.label}
+            </span>
+          ) : null}
         </header>
-
-        <div className="room-workspace">
+        <div className="learning-canvas-frame">
           <ArtifactFrame
             artifact={artifact}
             pendingCommands={pendingCommands}
@@ -73,56 +78,8 @@ export function LearningRoom({
             onStepChanged={onStepChanged}
             onArtifactError={onArtifactError}
           />
-
-          <aside className="inspector-panel">
-            <section className="dashboard-panel">
-              <div className="panel-heading compact">
-                <p className="eyebrow">
-                  <Crosshair size={14} /> Selected Component
-                </p>
-              </div>
-              {selectedComponent ? (
-                <div className="inspector-body">
-                  <h2>{selectedComponent.label}</h2>
-                  <p className="muted tight">{selectedComponent.id}</p>
-                  {selectedMetadata.length ? (
-                    <dl className="metadata-list">
-                      {selectedMetadata.slice(0, 6).map(([key, value]) => (
-                        <div key={key}>
-                          <dt>{key}</dt>
-                          <dd>{String(value)}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  ) : (
-                    <p className="muted tight">No metadata emitted for this component.</p>
-                  )}
-                </div>
-              ) : (
-                <p className="muted tight">Click a labeled part of the artifact to inspect it.</p>
-              )}
-            </section>
-
-            <section className="dashboard-panel">
-              <div className="panel-heading compact">
-                <p className="eyebrow">
-                  <ListChecks size={14} /> Walkthrough
-                </p>
-              </div>
-              <ol className="walkthrough-rail">
-                {artifact.walkthroughSteps.map((step, index) => (
-                  <li key={step.id}>
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    <div>
-                      <strong>{step.title}</strong>
-                      <p>{step.narration}</p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          </aside>
         </div>
+        <WalkthroughStrip steps={artifact.walkthroughSteps} activeStepId={activeStepId} onPrevious={onPreviousStep} onNext={onNextStep} />
       </section>
 
       <aside className="room-chat">
@@ -142,29 +99,16 @@ export function LearningRoom({
             </button>
           </div>
         </header>
-        <ChatThread messages={roomMessages} artifacts={artifacts} trace={trace} onEnterExperience={onEnterExperience} showArtifactCards={false} />
-        <ChatComposer disabled={false} pending={busy} placeholder="Ask about this room" onStop={onStopResponse} onSubmit={onLearningRoomMessage} />
-        <section className="command-log">
-          <p className="eyebrow">
-            <Braces size={14} /> Command buffer
-          </p>
-          <div className="log-list">
-            {pendingCommands.length ? (
-              pendingCommands.map((command, index) => (
-                <div className="log-row" key={`${command.type}-${index}`}>
-                  <RotateCcw size={14} />
-                  <span>{command.type}</span>
-                </div>
-              ))
-            ) : (
-              <div className="log-row">
-                <CheckCircle2 size={14} />
-                <span>No pending commands</span>
-              </div>
-            )}
-          </div>
-        </section>
+        <ChatThread
+          messages={messages}
+          artifacts={artifacts}
+          trace={trace}
+          onEnterExperience={onEnterExperience}
+          showArtifactCards={false}
+          proposalMode="compact"
+        />
+        <ChatComposer disabled={false} pending={busy} placeholder="Ask about this room" onStop={stopHandler} onSubmit={onLearningRoomMessage} />
       </aside>
-    </main>
+    </section>
   );
 }

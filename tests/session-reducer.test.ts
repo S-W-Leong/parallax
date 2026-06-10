@@ -41,11 +41,12 @@ describe("session reducer", () => {
     expect(inRoom.messages[1]).toMatchObject({ artifactId: artifact.id });
   });
 
-  it("tracks selected components as visible chat events", () => {
+  it("tracks selected components without adding visible chat noise", () => {
     const inRoom = sessionReducer(
       sessionReducer(createEmptySession(), { type: "artifact_created", artifact, trace: [] }),
       { type: "enter_experience", artifactId: artifact.id },
     );
+    const messageCount = inRoom.messages.length;
 
     const selected = sessionReducer(inRoom, {
       type: "component_selected",
@@ -53,7 +54,22 @@ describe("session reducer", () => {
     });
 
     expect(selected.selectedComponent).toMatchObject({ id: "nucleus", label: "Nucleus" });
-    expect(selected.messages.at(-1)).toMatchObject({ role: "system", content: "Selected: Nucleus" });
+    expect(selected.messages).toHaveLength(messageCount);
+    expect(selected.messages.some((message) => message.content === "Selected: Nucleus")).toBe(false);
+  });
+
+  it("tracks walkthrough step changes without adding visible chat noise", () => {
+    const inRoom = sessionReducer(
+      sessionReducer(createEmptySession(), { type: "artifact_created", artifact, trace: [] }),
+      { type: "enter_experience", artifactId: artifact.id },
+    );
+    const messageCount = inRoom.messages.length;
+
+    const changed = sessionReducer(inRoom, { type: "step_changed", stepId: "intro", title: "Start" });
+
+    expect(changed.activeStepId).toBe("intro");
+    expect(changed.messages).toHaveLength(messageCount);
+    expect(changed.messages.some((message) => message.content === "Walkthrough: Start")).toBe(false);
   });
 
   it("tags tutor user messages with the active artifact", () => {

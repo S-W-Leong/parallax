@@ -9,6 +9,7 @@ import { CodeInspector } from "./CodeInspector";
 type ArtifactFrameProps = {
   artifact: ArtifactRecord;
   pendingCommands: ArtifactCommand[];
+  showToolbar?: boolean;
   onCommandsFlushed: () => void;
   onComponentSelected: (component: SelectedComponent) => void;
   onStepChanged: (stepId: string, title: string) => void;
@@ -18,6 +19,7 @@ type ArtifactFrameProps = {
 export function ArtifactFrame({
   artifact,
   pendingCommands,
+  showToolbar = false,
   onCommandsFlushed,
   onComponentSelected,
   onStepChanged,
@@ -71,22 +73,24 @@ export function ArtifactFrame({
 
   return (
     <section className="artifact-stage">
-      <header className="artifact-toolbar">
-        <div>
-          <p className="eyebrow">Learning room</p>
-          <h2>{artifact.title}</h2>
-        </div>
-        <div className="toolbar-actions">
-          <button onClick={() => setInspecting(true)}>
-            <FileCode size={16} /> Inspect
-          </button>
-          <button onClick={downloadHtml}>
-            <Download size={16} /> Download
-          </button>
-        </div>
-      </header>
+      {showToolbar ? (
+        <header className="artifact-toolbar">
+          <div>
+            <p className="eyebrow">Learning room</p>
+            <h2>{artifact.title}</h2>
+          </div>
+          <div className="toolbar-actions">
+            <button onClick={() => setInspecting(true)}>
+              <FileCode size={16} /> Inspect
+            </button>
+            <button onClick={downloadHtml}>
+              <Download size={16} /> Download
+            </button>
+          </div>
+        </header>
+      ) : null}
       <iframe ref={iframeRef} title={artifact.title} srcDoc={artifact.html} sandbox="allow-scripts" />
-      <CodeInspector title={artifact.title} html={artifact.html} open={inspecting} onClose={() => setInspecting(false)} />
+      {showToolbar ? <CodeInspector title={artifact.title} html={artifact.html} open={inspecting} onClose={() => setInspecting(false)} /> : null}
     </section>
   );
 }
