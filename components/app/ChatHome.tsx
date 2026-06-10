@@ -22,6 +22,20 @@ export function ChatHome({ messages, artifacts, trace, busy, onSendMessage, onSt
   return (
     <section className="chat-home-shell" aria-label="Parallax chat">
       <div className="chat-scroll-region">
+        {!hasMessages ? (
+          <div className="ambient-field" aria-hidden="true">
+            <span className="ambient-ring ambient-ring-a" />
+            <span className="ambient-ring ambient-ring-b" />
+            <span className="ambient-connector ambient-connector-a" />
+            <span className="ambient-connector ambient-connector-b" />
+            <span className="ambient-node ambient-node-a" />
+            <span className="ambient-node ambient-node-b" />
+            <span className="ambient-node ambient-node-c" />
+            <span className="ambient-node ambient-node-d" />
+            <span className="ambient-node ambient-node-e" />
+            <span className="ambient-node ambient-node-f" />
+          </div>
+        ) : null}
         <ChatThread
           messages={messages}
           artifacts={artifacts}

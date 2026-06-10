@@ -33,7 +33,7 @@ export function ChatThread({ messages, artifacts, trace, onEnterExperience, show
     return (
       <div className="empty-thread">
         <p className="eyebrow">Parallax</p>
-        <h1>What should we build into 3D?</h1>
+        <h1>What should we explore?</h1>
       </div>
     );
   }

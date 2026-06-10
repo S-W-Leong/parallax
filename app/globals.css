@@ -651,11 +651,13 @@ a {
 }
 
 .chat-scroll-region {
+  position: relative;
   min-width: 0;
   min-height: 0;
   overflow: auto;
   scrollbar-gutter: stable;
   padding: clamp(18px, 4vh, 44px) clamp(14px, 5vw, 72px) 18px;
+  isolation: isolate;
 }
 
 .chat-scroll-region .thread,
@@ -667,11 +669,15 @@ a {
 }
 
 .chat-scroll-region .thread {
+  position: relative;
+  z-index: 1;
   overflow: visible;
   padding: 0 0 18px;
 }
 
 .chat-scroll-region .empty-thread {
+  position: relative;
+  z-index: 1;
   min-height: clamp(180px, 36vh, 340px);
   border: 0;
   background: transparent;
@@ -724,6 +730,8 @@ a {
 }
 
 .starter-prompts {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -736,6 +744,136 @@ a {
   background: var(--tint);
   font-size: 11px;
   font-weight: 800;
+}
+
+.ambient-field {
+  position: absolute;
+  inset: 4% clamp(8px, 4vw, 54px) 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ambient-ring,
+.ambient-connector,
+.ambient-node {
+  position: absolute;
+  display: block;
+}
+
+.ambient-ring {
+  width: clamp(160px, 25vw, 320px);
+  aspect-ratio: 1.8;
+  border: 1px solid rgba(40, 104, 232, 0.28);
+  border-radius: 50%;
+  transform: rotate(-18deg);
+  animation: ambient-orbit 16s linear infinite;
+}
+
+.ambient-ring::before,
+.ambient-ring::after {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--ink);
+  background: var(--accent);
+  box-shadow: 2px 2px 0 rgba(18, 20, 16, 0.18);
+}
+
+.ambient-ring::before {
+  top: 12%;
+  left: 18%;
+}
+
+.ambient-ring::after {
+  right: 20%;
+  bottom: 10%;
+  background: var(--panel);
+}
+
+.ambient-ring-a {
+  top: 10%;
+  right: 5%;
+}
+
+.ambient-ring-b {
+  bottom: 12%;
+  left: 2%;
+  width: clamp(130px, 20vw, 260px);
+  border-color: rgba(19, 118, 91, 0.24);
+  animation-duration: 20s;
+  animation-direction: reverse;
+}
+
+.ambient-connector {
+  height: 1px;
+  width: clamp(120px, 18vw, 250px);
+  background: repeating-linear-gradient(90deg, rgba(18, 20, 16, 0.34) 0 8px, transparent 8px 14px);
+  transform-origin: left center;
+  animation: ambient-drift 8s ease-in-out infinite;
+}
+
+.ambient-connector-a {
+  top: 35%;
+  left: 8%;
+  transform: rotate(-11deg);
+}
+
+.ambient-connector-b {
+  right: 10%;
+  bottom: 28%;
+  transform: rotate(16deg);
+  animation-delay: -3s;
+}
+
+.ambient-node {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--ink);
+  background: var(--panel);
+  box-shadow: 2px 2px 0 rgba(18, 20, 16, 0.2);
+  animation: ambient-float 7s ease-in-out infinite;
+}
+
+.ambient-node-a {
+  top: 18%;
+  left: 14%;
+  background: var(--accent);
+}
+
+.ambient-node-b {
+  top: 28%;
+  right: 18%;
+  animation-delay: -1s;
+}
+
+.ambient-node-c {
+  top: 62%;
+  left: 20%;
+  background: var(--chip);
+  animation-delay: -2s;
+}
+
+.ambient-node-d {
+  right: 26%;
+  bottom: 18%;
+  background: var(--blue);
+  animation-delay: -3s;
+}
+
+.ambient-node-e {
+  top: 52%;
+  right: 8%;
+  background: var(--accent);
+  animation-delay: -4s;
+}
+
+.ambient-node-f {
+  bottom: 10%;
+  left: 44%;
+  background: var(--green);
+  animation-delay: -5s;
 }
 
 .thread {
@@ -954,6 +1092,47 @@ a {
   46%,
   100% {
     opacity: 0;
+  }
+}
+
+@keyframes ambient-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(8px, -10px, 0);
+  }
+}
+
+@keyframes ambient-drift {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+
+  50% {
+    opacity: 0.76;
+  }
+}
+
+@keyframes ambient-orbit {
+  from {
+    transform: rotate(-18deg);
+  }
+
+  to {
+    transform: rotate(342deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-ring,
+  .ambient-connector,
+  .ambient-node,
+  .streaming-cursor {
+    animation: none;
   }
 }
 
