@@ -109,11 +109,18 @@ a {
 }
 
 .app-shell {
+  --rail-width: 58px;
+  --sidebar-width: 280px;
   height: 100vh;
+  height: 100dvh;
   min-height: 0;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
   overflow: hidden;
+}
+
+.app-shell.sidebar-pinned {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
 }
 
 .app-sidebar {
@@ -200,6 +207,7 @@ a {
 .hero-panel,
 .chat-shell,
 .proposal-card,
+.proposal-row,
 .collapsed-preview,
 .metric-card,
 .boot-panel {
@@ -213,6 +221,7 @@ a {
 .hero-panel,
 .chat-shell,
 .proposal-card,
+.proposal-row,
 .collapsed-preview,
 .metric-card {
   min-width: 0;
@@ -333,20 +342,105 @@ a {
 }
 
 .thread-sidebar {
+  width: var(--rail-width);
   min-height: 0;
-  border-right: 1px solid var(--line);
-  background: rgba(10, 13, 18, 0.98);
-  padding: 12px;
+  height: 100vh;
+  height: 100dvh;
+  border-right: 1px solid var(--ink);
+  background:
+    linear-gradient(90deg, rgba(19, 118, 91, 0.07) 1px, transparent 1px),
+    var(--panel);
+  background-size: 18px 18px;
+  padding: 10px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
+  overflow: hidden;
+  z-index: 10;
+  box-shadow: var(--shadow);
+  transition: width 180ms ease;
+}
+
+.thread-sidebar:hover,
+.thread-sidebar.is-pinned {
+  width: var(--sidebar-width);
 }
 
 .thread-sidebar header {
+  display: grid;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.thread-sidebar:hover header,
+.thread-sidebar.is-pinned header {
+  display: flex;
+  justify-content: space-between;
+}
+
+.rail-brand,
+.rail-actions {
+  min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+}
+
+.rail-brand {
+  flex: 1;
+}
+
+.rail-actions {
+  flex: 0 0 auto;
+  gap: 6px;
+  flex-direction: column;
+}
+
+.thread-sidebar:hover .rail-actions,
+.thread-sidebar.is-pinned .rail-actions {
+  flex-direction: row;
+}
+
+.rail-logo {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--accent);
+  box-shadow: var(--hard-shadow);
+  font-weight: 900;
+}
+
+.rail-label,
+.thread-labels,
+.archive-thread-button {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.thread-sidebar:hover .rail-label,
+.thread-sidebar:hover .thread-labels,
+.thread-sidebar:hover .archive-thread-button,
+.thread-sidebar.is-pinned .rail-label,
+.thread-sidebar.is-pinned .thread-labels,
+.thread-sidebar.is-pinned .archive-thread-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rail-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .thread-sidebar nav {
@@ -359,18 +453,46 @@ a {
 
 .thread-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
+  grid-template-columns: minmax(0, 1fr) 32px;
   gap: 6px;
   align-items: center;
+}
+
+.thread-sidebar:not(:hover):not(.is-pinned) .thread-item {
+  grid-template-columns: 36px;
+}
+
+.thread-sidebar:not(:hover):not(.is-pinned) .archive-thread-button {
+  display: none;
 }
 
 .thread-item > button:first-child {
   min-width: 0;
   justify-content: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 0 8px;
+}
+
+.thread-select {
+  height: 34px;
+  overflow: hidden;
+}
+
+.thread-icon {
+  flex: 0 0 auto;
+  color: var(--green);
+}
+
+.thread-labels {
+  min-width: 0;
+  flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  text-align: left;
+  align-items: center;
 }
 
 .thread-item span {
@@ -386,7 +508,7 @@ a {
 
 .thread-item.active > button:first-child {
   border-color: var(--accent);
-  background: #1d2b2d;
+  background: var(--chip);
 }
 
 .chat-shell {
@@ -480,6 +602,60 @@ a {
   overflow: hidden;
 }
 
+.chat-home-shell {
+  min-width: 0;
+  min-height: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.chat-scroll-region {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding: clamp(18px, 4vh, 44px) clamp(14px, 5vw, 72px) 18px;
+}
+
+.chat-scroll-region .thread,
+.chat-scroll-region .empty-thread,
+.starter-prompts,
+.chat-composer-region .composer {
+  width: min(860px, 100%);
+  margin-inline: auto;
+}
+
+.chat-scroll-region .thread {
+  overflow: visible;
+  padding: 0 0 18px;
+}
+
+.chat-scroll-region .empty-thread {
+  min-height: clamp(180px, 36vh, 340px);
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.chat-scroll-region .empty-thread h1 {
+  max-width: 660px;
+  font-size: clamp(28px, 5vw, 54px);
+  line-height: 1.02;
+}
+
+.chat-composer-region {
+  padding: 12px clamp(14px, 5vw, 72px) 18px;
+  background:
+    linear-gradient(180deg, rgba(244, 246, 238, 0), var(--bg) 32%),
+    linear-gradient(90deg, rgba(18, 20, 16, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(18, 20, 16, 0.045) 1px, transparent 1px),
+    var(--bg);
+  background-size: auto, 22px 22px, 22px 22px, auto;
+}
+
 .icon-button {
   width: 32px;
   min-width: 32px;
@@ -507,6 +683,13 @@ a {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
+}
+
+.starter-prompts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 22px;
 }
 
 .prompt-chip {
@@ -631,14 +814,70 @@ a {
 
 .proposal-card {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   padding: 14px;
   overflow: hidden;
+}
+
+.proposal-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 10px;
+}
+
+.proposal-row > div {
+  min-width: 0;
+}
+
+.proposal-row h2 {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .proposal-summary {
   margin: 0;
   line-height: 1.45;
+}
+
+.learning-outcomes {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.learning-outcomes li {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--tint);
+  padding: 8px 9px;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.learning-outcomes svg {
+  flex: 0 0 auto;
+  color: var(--green);
+  margin-top: 1px;
+}
+
+.learning-outcomes span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .proposal-grid {
@@ -1180,28 +1419,40 @@ a {
   }
 
   .app-shell {
-    height: auto;
-    min-height: 100vh;
-    grid-template-columns: 1fr;
-    overflow: visible;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    grid-template-columns: var(--rail-width) minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .app-shell.sidebar-pinned {
+    grid-template-columns: min(240px, 68vw) minmax(0, 1fr);
   }
 
   .thread-sidebar {
-    min-height: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--ink);
-    grid-template-rows: auto auto;
+    min-height: 0;
+    height: 100vh;
+    height: 100dvh;
+    border-right: 1px solid var(--ink);
+    border-bottom: 0;
+    grid-template-rows: auto minmax(0, 1fr);
     padding: 10px;
   }
 
+  .thread-sidebar:hover,
+  .thread-sidebar.is-pinned {
+    width: min(240px, 68vw);
+  }
+
   .thread-sidebar nav {
-    display: flex;
-    overflow-x: auto;
+    display: grid;
+    overflow: auto;
     padding-bottom: 2px;
   }
 
   .thread-item {
-    min-width: 216px;
+    min-width: 0;
   }
 
   .proposal-head,
@@ -1271,6 +1522,7 @@ a {
   }
 
   .prompt-grid,
+  .starter-prompts,
   .right-rail,
   .proposal-grid,
   .inspector-panel,
@@ -1293,8 +1545,17 @@ a {
   .hero-panel,
   .chat-shell,
   .dashboard-panel,
-  .proposal-card {
+  .proposal-card,
+  .proposal-row {
     padding: 10px;
+  }
+
+  .chat-scroll-region {
+    padding: 18px 12px 14px;
+  }
+
+  .chat-composer-region {
+    padding: 10px 12px 14px;
   }
 
   .message-user .message-stack,
@@ -1303,8 +1564,14 @@ a {
   }
 
   .proposal-head .primary-action,
+  .proposal-row .primary-action,
   .collapsed-preview .primary-action {
     width: 100%;
+  }
+
+  .proposal-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .chip-row,

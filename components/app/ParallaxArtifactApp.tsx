@@ -1,13 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { Activity, CheckCircle2, Cpu, History, MessageSquare } from "lucide-react";
+import { useRef, useState } from "react";
 import type { ArtifactCommand, ArtifactRecord, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 import { decodeAgentStreamEvents, type AgentStreamEvent } from "@/lib/agent/streamProtocol";
-import { ChatComposer } from "@/components/chat/ChatComposer";
-import { ChatThread } from "@/components/chat/ChatThread";
+import { ChatHome } from "@/components/app/ChatHome";
 import { ThreadSidebar } from "@/components/chat/ThreadSidebar";
-import { CollapsedArtifactPreview } from "@/components/experience/CollapsedArtifactPreview";
 import { LearningRoom } from "@/components/experience/LearningRoom";
 import { useThreadSession } from "@/lib/session/useThreadSession";
 
@@ -29,12 +26,10 @@ function isAbortError(error: unknown): boolean {
 export function ParallaxArtifactApp() {
   const { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread } = useThreadSession();
   const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null);
+  const [sidebarPinned, setSidebarPinned] = useState(false);
   const pendingRequestRef = useRef<PendingRequest | null>(null);
   const busy = Boolean(pendingRequest);
   const activeArtifact = state.activeArtifactId ? state.artifacts[state.activeArtifactId] : null;
-  const lastArtifact = state.lastArtifactId ? state.artifacts[state.lastArtifactId] : null;
-  const artifacts = useMemo(() => Object.values(state.artifacts).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [state.artifacts]);
-  const chatShellClass = useMemo(() => (lastArtifact ? "chat-shell has-preview" : "chat-shell"), [lastArtifact]);
 
   function stopResponse() {
     const activeRequest = pendingRequestRef.current;
@@ -271,123 +266,27 @@ export function ParallaxArtifactApp() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={sidebarPinned ? "app-shell sidebar-pinned" : "app-shell"}>
       <ThreadSidebar
         threads={threads}
         activeThreadId={activeThreadId}
+        pinned={sidebarPinned}
         actionsDisabled={busy}
+        onTogglePinned={() => setSidebarPinned((value) => !value)}
         onCreateThread={createThreadIfIdle}
         onSelectThread={selectThreadIfIdle}
         onArchiveThread={archiveThreadIfIdle}
       />
 
-      <section className="console-main" id="console">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">Interactive generation console</p>
-            <h2>3D Learning Room Builder</h2>
-          </div>
-          <div className="topbar-actions">
-            <span className="pill accent">SANDBOXED</span>
-            <span className="pill">3D RUNTIME</span>
-          </div>
-        </header>
-
-        <div className="console-grid">
-          <section className="hero-panel">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Topic intake</p>
-                <h3>What should we build into 3D?</h3>
-              </div>
-              <span className="metric-badge">{busy ? "AGENT ACTIVE" : "READY"}</span>
-            </div>
-            <ChatComposer disabled={false} pending={busy} placeholder="Ask to learn any STEM topic" onStop={stopResponse} onSubmit={sendChatMessage} />
-             <div className="prompt-grid">
-               {["Explain a fusion reactor", "Build a neuron synapse", "Show orbital resonance", "Model DNA replication"].map((prompt) => (
-                 <button className="prompt-chip" key={prompt} type="button" onClick={() => void sendChatMessage(prompt)} disabled={busy}>
-                   {prompt}
-                 </button>
-               ))}
-            </div>
-          </section>
-
-          <section className={chatShellClass}>
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">Conversation / proposals</p>
-                <h3>Agent Output</h3>
-              </div>
-              <MessageSquare size={18} />
-            </div>
-            <ChatThread messages={state.messages} artifacts={state.artifacts} trace={state.trace} onEnterExperience={enterExperience} />
-            {lastArtifact ? <CollapsedArtifactPreview artifact={lastArtifact} onEnterExperience={enterExperience} /> : null}
-          </section>
-
-          <aside className="right-rail">
-            <section className="metric-panel">
-              <div className="metric-card">
-                <p className="eyebrow">Generated rooms</p>
-                <strong>{artifacts.length}</strong>
-              </div>
-              <div className="metric-card">
-                <p className="eyebrow">Trace events</p>
-                <strong>{state.trace.length}</strong>
-              </div>
-            </section>
-
-            <section className="dashboard-panel">
-              <div className="panel-heading compact">
-                <p className="eyebrow">
-                  <Activity size={14} /> Agent Trace
-                </p>
-                <span className="pill">LOG</span>
-              </div>
-              <div className="log-list">
-                {(state.trace.length ? state.trace : ["topic parser idle", "scene compiler idle", "validator standing by"]).map((item) => (
-                  <div className="log-row" key={item}>
-                    <CheckCircle2 size={14} />
-                    <span>{item}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="dashboard-panel" id="rooms">
-              <div className="panel-heading compact">
-                <p className="eyebrow">
-                  <History size={14} /> Recent Rooms
-                </p>
-              </div>
-              <div className="room-list">
-                {(artifacts.length ? artifacts.slice(0, 4) : []).map((artifact) => (
-                  <button className="room-row" key={artifact.id} onClick={() => enterExperience(artifact.id)}>
-                    <span>{artifact.title}</span>
-                    <small>{artifact.components.length} components</small>
-                  </button>
-                ))}
-                {!artifacts.length ? <p className="muted tight">Generated learning rooms will appear here.</p> : null}
-              </div>
-            </section>
-
-            <section className="dashboard-panel" id="checks">
-              <div className="panel-heading compact">
-                <p className="eyebrow">
-                  <Cpu size={14} /> System Checks
-                </p>
-              </div>
-              <div className="check-grid">
-                <span>Iframe sandbox</span>
-                <strong>ON</strong>
-                <span>Three runtime</span>
-                <strong>LOCAL</strong>
-                <span>Tutor agent</span>
-                <strong>{busy ? "BUSY" : "READY"}</strong>
-              </div>
-            </section>
-           </aside>
-         </div>
-      </section>
+      <ChatHome
+        messages={state.messages}
+        artifacts={state.artifacts}
+        trace={state.trace}
+        busy={busy}
+        onSendMessage={sendChatMessage}
+        onStop={stopResponse}
+        onEnterExperience={enterExperience}
+      />
     </main>
   );
 }
