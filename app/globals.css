@@ -1646,17 +1646,28 @@ a {
     overflow: visible;
   }
 
+  .app-shell.is-learning,
+  .app-shell.sidebar-pinned.is-learning {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
   .learning-room-shell {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(58vh, 1fr) minmax(360px, 42vh);
-    overflow: hidden;
+    grid-template-rows: auto auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    height: auto;
+    overflow: visible;
   }
 
   .learning-room-shell .room-chat {
-    min-height: 0;
+    min-height: 360px;
     border-left: 0;
     border-top: 1px solid var(--ink);
-    overflow: hidden;
+    overflow: visible;
   }
 }
 

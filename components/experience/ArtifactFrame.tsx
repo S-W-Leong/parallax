@@ -27,11 +27,19 @@ export function ArtifactFrame({
 }: ArtifactFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [inspecting, setInspecting] = useState(false);
+  const [artifactReady, setArtifactReady] = useState(false);
+
+  useEffect(() => {
+    setArtifactReady(false);
+  }, [artifact.id]);
 
   useEffect(() => {
     function receive(event: MessageEvent) {
       const parsed = parseArtifactEvent(event.data);
       if (!parsed || parsed.artifactId !== artifact.id) return;
+      if (parsed.type === "artifact_ready") {
+        setArtifactReady(true);
+      }
       if (parsed.type === "component_selected") {
         onComponentSelected({
           artifactId: artifact.id,
@@ -54,12 +62,12 @@ export function ArtifactFrame({
 
   useEffect(() => {
     const target = iframeRef.current?.contentWindow;
-    if (!target || pendingCommands.length === 0) return;
+    if (!target || !artifactReady || pendingCommands.length === 0) return;
     for (const command of pendingCommands) {
       target.postMessage(buildParentArtifactMessage(artifact.id, command), "*");
     }
     onCommandsFlushed();
-  }, [artifact.id, onCommandsFlushed, pendingCommands]);
+  }, [artifact.id, artifactReady, onCommandsFlushed, pendingCommands]);
 
   function downloadHtml() {
     const blob = new Blob([artifact.html], { type: "text/html" });
