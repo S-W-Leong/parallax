@@ -28,7 +28,8 @@ vi.mock("@/lib/cloud/threadStore", () => {
   };
 });
 
-const { handleAgentRoute, handleChatRoute } = await import("@/lib/agent/routes");
+const { decodeAgentStreamEvents } = await import("@/lib/agent/streamProtocol");
+const { handleAgentRoute, handleAgentRouteStream, handleChatRoute } = await import("@/lib/agent/routes");
 const { run } = await import("@openai/agents");
 const mockedRun = vi.mocked(run);
 const { getThreadStore } = await import("@/lib/cloud/threadStore");
@@ -229,5 +230,60 @@ describe("agent routes", () => {
       artifact: null,
       error: null,
     });
+  });
+
+  it("streams status, deltas, and a done event for chat mode", async () => {
+    const streamResult = {
+      finalOutput: "Let us explore cells.",
+      completed: Promise.resolve(),
+      error: null,
+      toTextStream: () =>
+        new ReadableStream<string>({
+          start(controller) {
+            controller.enqueue("Let us ");
+            controller.enqueue("explore cells.");
+            controller.close();
+          },
+        }),
+    };
+    mockedRun.mockResolvedValueOnce(streamResult as never);
+
+    const response = handleAgentRouteStream({ mode: "chat", message: "Teach me cells", messages: [] });
+    const events = decodeAgentStreamEvents(await new Response(response).text());
+
+    expect(mockedRun).toHaveBeenCalledWith(expect.anything(), expect.any(String), { maxTurns: 8, stream: true });
+    expect(events).toEqual([
+      { type: "status", message: "Planning the learning experience..." },
+      { type: "delta", delta: "Let us " },
+      { type: "delta", delta: "explore cells." },
+      {
+        type: "done",
+        message: "Let us explore cells.",
+        trace: [],
+        artifact: null,
+        commands: [],
+        error: null,
+      },
+    ]);
+  });
+
+  it("streams a done event with an error instead of crashing the stream", async () => {
+    mockedRun.mockRejectedValueOnce(new Error("Model unavailable"));
+
+    const response = handleAgentRouteStream({ mode: "chat", message: "Teach me cells", messages: [] });
+    const events = decodeAgentStreamEvents(await new Response(response).text());
+
+    expect(events).toEqual([
+      { type: "status", message: "Planning the learning experience..." },
+      { type: "error", message: "Model unavailable" },
+      {
+        type: "done",
+        message: "Model unavailable",
+        trace: [],
+        artifact: null,
+        commands: [],
+        error: "Model unavailable",
+      },
+    ]);
   });
 });
