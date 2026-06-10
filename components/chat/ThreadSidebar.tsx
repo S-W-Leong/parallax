@@ -44,12 +44,6 @@ export function ThreadSidebar({
       className={sidebarClass}
       onMouseEnter={() => onExpandedChange(true)}
       onMouseLeave={() => onExpandedChange(false)}
-      onFocus={() => onExpandedChange(true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
-          onExpandedChange(false);
-        }
-      }}
     >
       <header>
         <div className="rail-brand">

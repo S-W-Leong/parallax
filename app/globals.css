@@ -374,7 +374,6 @@ a {
 }
 
 .thread-sidebar:hover,
-.thread-sidebar:focus-within,
 .thread-sidebar.is-pinned {
   width: var(--sidebar-width);
 }
@@ -388,7 +387,6 @@ a {
 }
 
 .thread-sidebar:hover header,
-.thread-sidebar:focus-within header,
 .thread-sidebar.is-pinned header {
   display: flex;
   justify-content: space-between;
@@ -413,7 +411,6 @@ a {
 }
 
 .thread-sidebar:hover .rail-actions,
-.thread-sidebar:focus-within .rail-actions,
 .thread-sidebar.is-pinned .rail-actions {
   flex-direction: row;
 }
@@ -470,9 +467,6 @@ a {
 .thread-sidebar:hover .rail-label,
 .thread-sidebar:hover .thread-labels,
 .thread-sidebar:hover .archive-thread-button,
-.thread-sidebar:focus-within .rail-label,
-.thread-sidebar:focus-within .thread-labels,
-.thread-sidebar:focus-within .archive-thread-button,
 .thread-sidebar.is-pinned .rail-label,
 .thread-sidebar.is-pinned .thread-labels,
 .thread-sidebar.is-pinned .archive-thread-button {
@@ -497,7 +491,7 @@ a {
   gap: 6px;
 }
 
-.thread-sidebar:not(:hover):not(:focus-within):not(.is-pinned) nav {
+.thread-sidebar:not(:hover):not(.is-pinned) nav {
   display: none;
 }
 
@@ -508,11 +502,11 @@ a {
   align-items: center;
 }
 
-.thread-sidebar:not(:hover):not(:focus-within):not(.is-pinned) .thread-item {
+.thread-sidebar:not(:hover):not(.is-pinned) .thread-item {
   grid-template-columns: 36px;
 }
 
-.thread-sidebar:not(:hover):not(:focus-within):not(.is-pinned) .archive-thread-button {
+.thread-sidebar:not(:hover):not(.is-pinned) .archive-thread-button {
   display: none;
 }
 
@@ -1651,7 +1645,6 @@ a {
   }
 
   .thread-sidebar:hover,
-  .thread-sidebar:focus-within,
   .thread-sidebar.is-pinned {
     width: min(240px, 68vw);
   }
