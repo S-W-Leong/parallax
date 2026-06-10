@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Menu } from "lucide-react";
 import type { ArtifactCommand, ArtifactRecord, SelectedComponent } from "@/lib/artifacts/artifactTypes";
 import { decodeAgentStreamEvents, type AgentStreamEvent } from "@/lib/agent/streamProtocol";
+import { ParallaxLogo } from "@/components/brand/ParallaxLogo";
 import { ChatHome } from "@/components/app/ChatHome";
 import { ThreadSidebar } from "@/components/chat/ThreadSidebar";
 import { LearningRoom } from "@/components/experience/LearningRoom";
@@ -14,6 +15,15 @@ type PendingRequest = {
   draftId: string;
   controller: AbortController;
 };
+
+type AppShellClassOptions = {
+  sidebarExpanded: boolean;
+  learning: boolean;
+};
+
+export function getAppShellClassName({ sidebarExpanded, learning }: AppShellClassOptions): string {
+  return ["app-shell", sidebarExpanded ? "sidebar-pinned" : "", learning ? "is-learning" : ""].filter(Boolean).join(" ");
+}
 
 function makeClientId(prefix: string): string {
   const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -28,10 +38,12 @@ export function ParallaxArtifactApp() {
   const { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread } = useThreadSession();
   const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null);
   const [sidebarPinned, setSidebarPinned] = useState(false);
+  const [sidebarHoverExpanded, setSidebarHoverExpanded] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const pendingRequestRef = useRef<PendingRequest | null>(null);
   const busy = Boolean(pendingRequest);
   const activeArtifact = state.activeArtifactId ? state.artifacts[state.activeArtifactId] : null;
+  const sidebarExpanded = sidebarPinned || sidebarHoverExpanded;
 
   function stopResponse() {
     const activeRequest = pendingRequestRef.current;
@@ -237,7 +249,10 @@ export function ParallaxArtifactApp() {
     return (
       <main className="lab-shell">
         <section className="boot-panel">
-          <div className="lab-mark">Parallax</div>
+          <div className="lab-mark">
+            <ParallaxLogo className="parallax-logo" />
+            <span>Parallax</span>
+          </div>
           <p className="eyebrow">Session restore</p>
         </section>
       </main>
@@ -246,7 +261,7 @@ export function ParallaxArtifactApp() {
 
   if (state.mode === "learning_room" && activeArtifact) {
     return (
-      <main className={sidebarPinned ? "app-shell sidebar-pinned is-learning" : "app-shell is-learning"}>
+      <main className={getAppShellClassName({ sidebarExpanded, learning: true })}>
         <ThreadSidebar
           threads={threads}
           activeThreadId={activeThreadId}
@@ -254,6 +269,7 @@ export function ParallaxArtifactApp() {
           mobileOpen={mobileSidebarOpen}
           actionsDisabled={busy}
           onTogglePinned={() => setSidebarPinned((value) => !value)}
+          onExpandedChange={setSidebarHoverExpanded}
           onCloseMobile={() => setMobileSidebarOpen(false)}
           onCreateThread={createThreadIfIdle}
           onSelectThread={selectThreadIfIdle}
@@ -287,7 +303,7 @@ export function ParallaxArtifactApp() {
   }
 
   return (
-    <main className={sidebarPinned ? "app-shell sidebar-pinned" : "app-shell"}>
+    <main className={getAppShellClassName({ sidebarExpanded, learning: false })}>
       <ThreadSidebar
         threads={threads}
         activeThreadId={activeThreadId}
@@ -295,6 +311,7 @@ export function ParallaxArtifactApp() {
         mobileOpen={mobileSidebarOpen}
         actionsDisabled={busy}
         onTogglePinned={() => setSidebarPinned((value) => !value)}
+        onExpandedChange={setSidebarHoverExpanded}
         onCloseMobile={() => setMobileSidebarOpen(false)}
         onCreateThread={createThreadIfIdle}
         onSelectThread={selectThreadIfIdle}

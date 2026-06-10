@@ -1,6 +1,7 @@
 "use client";
 
 import { Archive, MessageSquare, MessageSquarePlus, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { ParallaxLogo } from "@/components/brand/ParallaxLogo";
 import type { PersistedThreadSummary } from "@/lib/cloud/threadRecords";
 
 type ThreadSidebarProps = {
@@ -11,6 +12,7 @@ type ThreadSidebarProps = {
   actionsDisabled?: boolean;
   onTogglePinned: () => void;
   onCloseMobile: () => void;
+  onExpandedChange: (expanded: boolean) => void;
   onCreateThread: () => void;
   onSelectThread: (threadId: string) => void;
   onArchiveThread: (threadId: string) => void;
@@ -30,6 +32,7 @@ export function ThreadSidebar({
   actionsDisabled = false,
   onTogglePinned,
   onCloseMobile,
+  onExpandedChange,
   onCreateThread,
   onSelectThread,
   onArchiveThread,
@@ -37,11 +40,21 @@ export function ThreadSidebar({
   const sidebarClass = ["thread-sidebar", pinned ? "is-pinned" : "", mobileOpen ? "is-mobile-open" : ""].filter(Boolean).join(" ");
 
   return (
-    <aside className={sidebarClass}>
+    <aside
+      className={sidebarClass}
+      onMouseEnter={() => onExpandedChange(true)}
+      onMouseLeave={() => onExpandedChange(false)}
+      onFocus={() => onExpandedChange(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          onExpandedChange(false);
+        }
+      }}
+    >
       <header>
         <div className="rail-brand">
           <span className="rail-logo" aria-hidden="true">
-            P
+            <ParallaxLogo className="parallax-logo" />
           </span>
           <span className="rail-label">Parallax</span>
         </div>
