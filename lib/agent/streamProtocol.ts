@@ -1,7 +1,9 @@
 import type { AgentTraceEntry, ArtifactCommand, ArtifactRecord } from "@/lib/artifacts/artifactTypes";
+import type { AgentActivityEvent } from "./activity";
 
 export type AgentStreamEvent =
   | { type: "status"; message: string }
+  | { type: "activity"; activity: AgentActivityEvent }
   | { type: "trace"; entry: AgentTraceEntry }
   | { type: "delta"; delta: string }
   | { type: "done"; message: string; trace: string[]; artifact: ArtifactRecord | null; commands: ArtifactCommand[]; error: string | null }

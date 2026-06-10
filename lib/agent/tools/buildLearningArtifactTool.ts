@@ -1,18 +1,13 @@
 import { run, tool, type Tool } from "@openai/agents";
 import { z } from "zod";
-import type { ArtifactRecord } from "@/lib/artifacts/artifactTypes";
+import { artifactSourceSchema, type ArtifactRecord } from "@/lib/artifacts/artifactTypes";
+import type { AgentActivityEmitter } from "../activity";
 import { makeBuilderAgent, makeCriticAgent } from "../agents";
 import { makeArtifactCritiqueToolSink, type ArtifactCritique } from "./artifactCritiqueTool";
 import { makeCreateExperienceToolSink } from "./createExperienceTool";
 import type { LessonPlan } from "./lessonPlanTool";
 
 const lessonModeSchema = z.enum(["playground", "guided_walkthrough"]);
-
-const sourceSchema = z.object({
-  title: z.string().min(1),
-  url: z.string().url(),
-  summary: z.string().min(1),
-});
 
 const mechanismSpecSchema = z.object({
   topic: z.string().min(1),
@@ -52,7 +47,7 @@ const buildLearningArtifactInputSchema = z.object({
   rationale: z.string().min(1),
   interactionGoal: z.string().min(1),
   researchUsed: z.boolean(),
-  sources: z.array(sourceSchema).max(4),
+  sources: z.array(artifactSourceSchema).max(4),
   requiredComponents: z.array(z.string().min(1)).min(1).max(8),
   mechanismSpec: mechanismSpecSchema,
   builderBrief: z.string().min(1),
@@ -76,6 +71,10 @@ export type BuildLearningArtifactToolSink = {
   getResult: () => BuildLearningArtifactResult | null;
 };
 
+type BuildLearningArtifactOptions = {
+  onActivity?: AgentActivityEmitter;
+};
+
 function makeBuilderPrompt(
   plan: LessonPlan,
   requestMessage: string,
@@ -97,6 +96,10 @@ function makeArtifactTrace(plan: LessonPlan): string[] {
     "Generating interactive 3D artifact",
     "Validating artifact contract",
   ];
+}
+
+function emitActivity(options: BuildLearningArtifactOptions | undefined, activity: Parameters<AgentActivityEmitter>[0]) {
+  options?.onActivity?.(activity);
 }
 
 function makeCriticPrompt(plan: LessonPlan, artifact: ArtifactRecord, requestMessage: string): string {
@@ -187,10 +190,25 @@ function normalizePlan(input: z.infer<typeof buildLearningArtifactInputSchema>):
   };
 }
 
-export async function buildLearningArtifactFromPlan(plan: LessonPlan, requestMessage: string): Promise<BuildLearningArtifactResult> {
+export async function buildLearningArtifactFromPlan(
+  plan: LessonPlan,
+  requestMessage: string,
+  options: BuildLearningArtifactOptions = {},
+): Promise<BuildLearningArtifactResult> {
   const createExperience = makeCreateExperienceToolSink();
   const builderAgent = makeBuilderAgent([createExperience.tool]);
   const trace = makeArtifactTrace(plan);
+  emitActivity(options, {
+    type: "phase.started",
+    phase: plan.researchUsed ? "research" : "artifact.build",
+    label: plan.researchUsed ? "Grounding lesson plan with sources" : "Using stable topic knowledge",
+  });
+  emitActivity(options, {
+    type: "phase.started",
+    phase: "artifact.build",
+    label: "Generating interactive 3D artifact",
+    detail: plan.title,
+  });
   let builderResult = await run(builderAgent, makeBuilderPrompt(plan, requestMessage), { maxTurns: 8 });
   let artifactResult = createExperience.getResult();
 
@@ -198,7 +216,19 @@ export async function buildLearningArtifactFromPlan(plan: LessonPlan, requestMes
     const validationError = artifactResult?.ok === false
       ? artifactResult.error
       : missingCreateExperienceErrorMessage(plan);
+    emitActivity(options, {
+      type: "phase.completed",
+      phase: "artifact.validate",
+      label: "Artifact validation needs repair",
+      ok: false,
+      detail: validationError,
+    });
     trace.push("Repairing artifact from validator feedback");
+    emitActivity(options, {
+      type: "phase.started",
+      phase: "artifact.build",
+      label: "Repairing artifact from validator feedback",
+    });
     createExperience.clearResult();
     builderResult = await run(builderAgent, makeBuilderPrompt(plan, requestMessage, { validatorError: validationError }), { maxTurns: 8 });
     artifactResult = createExperience.getResult();
@@ -206,44 +236,127 @@ export async function buildLearningArtifactFromPlan(plan: LessonPlan, requestMes
 
   if (!artifactResult) {
     const error = missingCreateExperienceErrorMessage(plan);
+    emitActivity(options, {
+      type: "phase.completed",
+      phase: "artifact.build",
+      label: "Artifact generation failed",
+      ok: false,
+      detail: error,
+    });
     return { ok: false, message: error, trace, error };
   }
 
   if (!artifactResult.ok) {
+    emitActivity(options, {
+      type: "phase.completed",
+      phase: "artifact.validate",
+      label: "Artifact validation failed",
+      ok: false,
+      detail: artifactResult.error,
+    });
     return { ok: false, message: artifactResult.error, trace, error: artifactResult.error };
   }
 
   let acceptedArtifact = artifactResult.artifact;
   let acceptedResult = builderResult;
+  emitActivity(options, {
+    type: "phase.completed",
+    phase: "artifact.validate",
+    label: "Artifact contract validated",
+    ok: true,
+  });
   trace.push("Reviewing artifact accuracy");
+  emitActivity(options, {
+    type: "phase.started",
+    phase: "artifact.critique",
+    label: "Reviewing artifact accuracy",
+  });
   const critique = await critiqueArtifact(plan, acceptedArtifact, requestMessage);
   if (!critique.ok) {
+    emitActivity(options, {
+      type: "phase.completed",
+      phase: "artifact.critique",
+      label: "Artifact critique failed",
+      ok: false,
+      detail: critique.error,
+    });
     return { ok: false, message: critique.error, trace, error: critique.error };
   }
 
   if (!critique.critique.approved) {
     trace.push("Repairing artifact from critic feedback");
+    emitActivity(options, {
+      type: "phase.completed",
+      phase: "artifact.critique",
+      label: "Critic requested artifact repair",
+      ok: false,
+      detail: critiqueIssueSummary(critique.critique),
+    });
+    emitActivity(options, {
+      type: "phase.started",
+      phase: "artifact.build",
+      label: "Repairing artifact from critic feedback",
+    });
     createExperience.clearResult();
     const retryResult = await run(builderAgent, makeBuilderPrompt(plan, requestMessage, { critic: critique.critique }), { maxTurns: 8 });
     const retryArtifactResult = createExperience.getResult();
 
     if (!retryArtifactResult) {
       const error = missingCreateExperienceErrorMessage(plan);
+      emitActivity(options, {
+        type: "phase.completed",
+        phase: "artifact.build",
+        label: "Artifact repair failed",
+        ok: false,
+        detail: error,
+      });
       return { ok: false, message: error, trace, error };
     }
 
     if (!retryArtifactResult.ok) {
+      emitActivity(options, {
+        type: "phase.completed",
+        phase: "artifact.validate",
+        label: "Repaired artifact validation failed",
+        ok: false,
+        detail: retryArtifactResult.error,
+      });
       return { ok: false, message: retryArtifactResult.error, trace, error: retryArtifactResult.error };
     }
 
     trace.push("Re-reviewing artifact accuracy");
+    emitActivity(options, {
+      type: "phase.completed",
+      phase: "artifact.validate",
+      label: "Repaired artifact contract validated",
+      ok: true,
+    });
+    emitActivity(options, {
+      type: "phase.started",
+      phase: "artifact.critique",
+      label: "Re-reviewing artifact accuracy",
+    });
     const retryCritique = await critiqueArtifact(plan, retryArtifactResult.artifact, requestMessage);
     if (!retryCritique.ok) {
+      emitActivity(options, {
+        type: "phase.completed",
+        phase: "artifact.critique",
+        label: "Artifact re-review failed",
+        ok: false,
+        detail: retryCritique.error,
+      });
       return { ok: false, message: retryCritique.error, trace, error: retryCritique.error };
     }
 
     if (!retryCritique.critique.approved) {
       const message = blockedArtifactMessage(retryArtifactResult.artifact.title, retryCritique.critique);
+      emitActivity(options, {
+        type: "phase.completed",
+        phase: "artifact.critique",
+        label: "Critic blocked artifact",
+        ok: false,
+        detail: message,
+      });
       return { ok: false, message, trace, error: message };
     }
 
@@ -251,11 +364,17 @@ export async function buildLearningArtifactFromPlan(plan: LessonPlan, requestMes
     acceptedResult = retryResult;
   }
 
+  emitActivity(options, {
+    type: "phase.completed",
+    phase: "artifact.critique",
+    label: "Artifact approved",
+    ok: true,
+  });
   const message = finalOutputText(acceptedResult.finalOutput, `I built ${acceptedArtifact.title}.`);
   return { ok: true, message, trace, artifact: acceptedArtifact };
 }
 
-export function makeBuildLearningArtifactToolSink(): BuildLearningArtifactToolSink {
+export function makeBuildLearningArtifactToolSink(options: BuildLearningArtifactOptions = {}): BuildLearningArtifactToolSink {
   let result: BuildLearningArtifactResult | null = null;
 
   const buildTool = tool({
@@ -265,7 +384,7 @@ export function makeBuildLearningArtifactToolSink(): BuildLearningArtifactToolSi
     parameters: buildLearningArtifactInputSchema,
     async execute(input) {
       const plan = normalizePlan(input);
-      result = await buildLearningArtifactFromPlan(plan, input.requestMessage ?? input.builderBrief);
+      result = await buildLearningArtifactFromPlan(plan, input.requestMessage ?? input.builderBrief, options);
 
       if (!result.ok) {
         return {

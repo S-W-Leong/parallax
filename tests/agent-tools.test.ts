@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeArtifactCritiqueToolSink } from "@/lib/agent/tools/artifactCritiqueTool";
+import { makeBuildLearningArtifactToolSink } from "@/lib/agent/tools/buildLearningArtifactTool";
 import { makeCreateExperienceToolSink } from "@/lib/agent/tools/createExperienceTool";
 import { makeLessonPlanToolSink } from "@/lib/agent/tools/lessonPlanTool";
 import { makeResearchStemTopicTool } from "@/lib/agent/tools/researchStemTopicTool";
@@ -303,6 +304,15 @@ setWalkthroughSteps([]);
 
   it("does not expose tuple-style or property-name JSON schema features in lesson-plan parameters", () => {
     const sink = makeLessonPlanToolSink();
+    const serialized = JSON.stringify(sink.tool.parameters);
+
+    expect(serialized).not.toContain('"items":[{');
+    expect(serialized).not.toContain("propertyNames");
+    expect(serialized).not.toContain('"format":"uri"');
+  });
+
+  it("does not expose unsupported JSON schema features in build-learning-artifact parameters", () => {
+    const sink = makeBuildLearningArtifactToolSink();
     const serialized = JSON.stringify(sink.tool.parameters);
 
     expect(serialized).not.toContain('"items":[{');

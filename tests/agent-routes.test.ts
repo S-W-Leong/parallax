@@ -297,6 +297,16 @@ describe("agent routes", () => {
     const streamedResult = {
       async *[Symbol.asyncIterator]() {
         yield { type: "agent_updated_stream_event", agent: { name: "Parallax Guide" } };
+        yield {
+          type: "run_item_stream_event",
+          name: "tool_called",
+          item: { rawItem: { name: "build_learning_artifact", arguments: JSON.stringify({ topic: "cells" }) } },
+        };
+        yield {
+          type: "run_item_stream_event",
+          name: "tool_output",
+          item: { rawItem: { name: "build_learning_artifact", output: JSON.stringify({ ok: true, componentCount: 3, walkthroughStepCount: 1 }) } },
+        };
         yield { type: "text_delta", delta: "I built " };
         yield { type: "text_delta", delta: "a corrected room." };
       },
@@ -320,7 +330,15 @@ describe("agent routes", () => {
 
     expect(events).toEqual([
       { type: "status", message: "Thinking..." },
-      { type: "trace", entry: { kind: "agent", label: "Using Parallax Guide" } },
+      { type: "activity", activity: { type: "agent.started", agentName: "Parallax Guide" } },
+      {
+        type: "activity",
+        activity: { type: "tool.started", toolName: "build_learning_artifact", inputSummary: "{\"topic\":\"cells\"}" },
+      },
+      {
+        type: "activity",
+        activity: { type: "tool.completed", toolName: "build_learning_artifact", outputSummary: "Succeeded (3 components, 1 step)", ok: true },
+      },
       { type: "delta", delta: "I built " },
       { type: "delta", delta: "a corrected room." },
       {

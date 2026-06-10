@@ -10,6 +10,7 @@ import {
   type ChatMessage,
 } from "@/lib/artifacts/artifactTypes";
 import { getThreadStore } from "@/lib/cloud/threadStore";
+import type { AgentActivityEvent, AgentActivityEmitter } from "./activity";
 import { encodeAgentStreamEvent, type AgentStreamEvent } from "./streamProtocol";
 import { makeGuideAgent } from "./agents";
 import { ThreadAgentSession } from "./threadAgentSession";
@@ -310,12 +311,21 @@ function outputDetailForItem(item: unknown): string | undefined {
   return summarizeToolOutput(output);
 }
 
-function traceEntryFromRunStreamEvent(event: unknown): AgentTraceEntry | null {
+function inputDetailForItem(item: unknown): string | undefined {
+  if (!isRecord(item)) return undefined;
+
+  const input = item.input ?? item.arguments ?? (isRecord(item.rawItem) ? item.rawItem.arguments : undefined);
+  if (input === undefined || input === null) return undefined;
+
+  return typeof input === "string" ? truncateDetail(input) : truncateDetail(JSON.stringify(input));
+}
+
+function activityFromRunStreamEvent(event: unknown): AgentActivityEvent | null {
   if (!isRecord(event)) return null;
 
   if (event.type === "agent_updated_stream_event") {
     const agentName = isRecord(event.agent) ? stringProperty(event.agent, "name") : null;
-    return { kind: "agent", label: `Using ${agentName ?? "agent"}` };
+    return { type: "agent.started", agentName: agentName ?? "agent" };
   }
 
   if (event.type !== "run_item_stream_event") return null;
@@ -325,24 +335,25 @@ function traceEntryFromRunStreamEvent(event: unknown): AgentTraceEntry | null {
   if (!name) return null;
 
   if (name === "reasoning_item_created") {
-    return { kind: "reasoning", label: "Reasoning through next step" };
+    return { type: "reasoning.started" };
   }
 
   if (name === "tool_called" || name === "tool_search_called") {
-    return { kind: "tool", label: `Calling ${toolNameForItem(item)}`, detail: "Executing tool" };
+    return { type: "tool.started", toolName: toolNameForItem(item), inputSummary: inputDetailForItem(item) };
   }
 
   if (name === "tool_output" || name === "tool_search_output_created") {
     const toolName = toolNameForItem(item);
-    return { kind: "tool", label: `${toolName} completed`, detail: outputDetailForItem(item) };
+    const detail = outputDetailForItem(item);
+    return { type: "tool.completed", toolName, outputSummary: detail, ok: detail?.startsWith("Tool failed") !== true };
   }
 
   if (name === "handoff_requested") {
-    return { kind: "handoff", label: "Handoff requested" };
+    return { type: "phase.started", phase: "artifact.build", label: "Handoff requested" };
   }
 
   if (name === "handoff_occurred") {
-    return { kind: "handoff", label: "Handoff completed" };
+    return { type: "phase.completed", phase: "artifact.build", label: "Handoff completed", ok: true };
   }
 
   return null;
@@ -375,8 +386,8 @@ async function* readTextChunks(readable: unknown): AsyncIterable<string> {
 async function emitRunStreamEvents(streamedResult: unknown, emit: (event: AgentStreamEvent) => void) {
   if (typeof (streamedResult as AsyncIterable<unknown>)?.[Symbol.asyncIterator] === "function") {
     for await (const event of streamedResult as AsyncIterable<unknown>) {
-      const traceEntry = traceEntryFromRunStreamEvent(event);
-      if (traceEntry) emit({ type: "trace", entry: traceEntry });
+      const activity = activityFromRunStreamEvent(event);
+      if (activity) emit({ type: "activity", activity });
 
       const delta = extractDeltaFromStreamEvent(event);
       if (delta) emit({ type: "delta", delta });
@@ -473,7 +484,10 @@ async function runGuideModeStream(
 ) {
   const activeArtifact = activeArtifactForGuide(request);
   const userMessage = makeMessage("user", request.message, activeArtifact?.id);
-  const buildArtifact = makeBuildLearningArtifactToolSink();
+  const emitActivity: AgentActivityEmitter = (activity) => {
+    emit({ type: "activity", activity });
+  };
+  const buildArtifact = makeBuildLearningArtifactToolSink({ onActivity: emitActivity });
   const commandSink = makeSendArtifactCommandSink();
   const tools = activeArtifact
     ? [makeResearchStemTopicTool(), buildArtifact.tool, commandSink.tool]

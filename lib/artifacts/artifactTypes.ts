@@ -102,7 +102,7 @@ export const selectedComponentSchema = z.object({
 });
 
 export const agentTraceEntrySchema = z.object({
-  kind: z.enum(["agent", "reasoning", "tool", "handoff"]),
+  kind: z.enum(["agent", "reasoning", "tool", "handoff", "phase"]),
   label: z.string().min(1),
   detail: z.string().min(1).optional(),
 });

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Menu } from "lucide-react";
 import type { ArtifactRecord, SelectedComponent } from "@/lib/artifacts/artifactTypes";
+import { activityToTraceEntry } from "@/lib/agent/activity";
 import { decodeAgentStreamEvents, type AgentStreamEvent } from "@/lib/agent/streamProtocol";
 import { ParallaxLogo } from "@/components/brand/ParallaxLogo";
 import { ChatHome } from "@/components/app/ChatHome";
@@ -112,6 +113,11 @@ export function ParallaxArtifactApp() {
       } else {
         dispatchAction({ type: "assistant_draft_delta", id: draftId, delta: event.delta });
       }
+      return;
+    }
+
+    if (event.type === "activity") {
+      dispatchAction({ type: "assistant_trace_event", id: draftId, entry: activityToTraceEntry(event.activity) });
       return;
     }
 
