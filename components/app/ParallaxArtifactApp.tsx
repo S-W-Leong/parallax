@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Activity, CheckCircle2, Cpu, History, MessageSquare } from "lucide-react";
 import type { ArtifactCommand, ArtifactRecord, SelectedComponent } from "@/lib/artifacts/artifactTypes";
+import { decodeAgentStreamEvents, type AgentStreamEvent } from "@/lib/agent/streamProtocol";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatThread } from "@/components/chat/ChatThread";
 import { ThreadSidebar } from "@/components/chat/ThreadSidebar";
@@ -10,86 +11,188 @@ import { CollapsedArtifactPreview } from "@/components/experience/CollapsedArtif
 import { LearningRoom } from "@/components/experience/LearningRoom";
 import { useThreadSession } from "@/lib/session/useThreadSession";
 
-type ChatAgentResponse = {
-  message: string;
-  trace: string[];
-  artifact: ArtifactRecord | null;
-  error: string | null;
+type PendingRequest = {
+  id: string;
+  draftId: string;
+  controller: AbortController;
 };
 
-type LearningRoomAgentResponse = {
-  message: string;
-  commands: ArtifactCommand[];
-};
+function makeClientId(prefix: string): string {
+  const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return `${prefix}-${random}`;
+}
 
-async function readJson<T>(response: Response): Promise<T> {
-  const data = (await response.json().catch(() => null)) as T | null;
-  if (!response.ok) {
-    const maybeError = data as { error?: string; message?: string } | null;
-    throw new Error(maybeError?.error ?? maybeError?.message ?? response.statusText);
-  }
-  if (!data) throw new Error("Empty agent response");
-  return data;
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 export function ParallaxArtifactApp() {
   const { userId, activeThreadId, threads, state, dispatch, hydrated, createThread, selectThread, archiveThread } = useThreadSession();
-  const [busy, setBusy] = useState(false);
+  const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null);
+  const busy = Boolean(pendingRequest);
   const activeArtifact = state.activeArtifactId ? state.artifacts[state.activeArtifactId] : null;
   const lastArtifact = state.lastArtifactId ? state.artifacts[state.lastArtifactId] : null;
   const artifacts = useMemo(() => Object.values(state.artifacts).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [state.artifacts]);
   const chatShellClass = useMemo(() => (lastArtifact ? "chat-shell has-preview" : "chat-shell"), [lastArtifact]);
 
-  async function sendChatMessage(message: string) {
-    dispatch({ type: "user_message", content: message });
-    setBusy(true);
+  function stopResponse() {
+    if (!pendingRequest) return;
+    pendingRequest.controller.abort();
+    dispatch({ type: "assistant_draft_stopped", id: pendingRequest.draftId });
+    setPendingRequest(null);
+  }
+
+  function processStreamEvent(
+    event: AgentStreamEvent,
+    draftId: string,
+    artifactId: string | undefined,
+    streamState: { hasDelta: boolean; errorShown: boolean },
+  ) {
+    if (event.type === "status") {
+      if (!streamState.hasDelta) {
+        dispatch({ type: "assistant_draft_replaced", id: draftId, content: event.message });
+      }
+      return;
+    }
+
+    if (event.type === "delta") {
+      if (!streamState.hasDelta) {
+        streamState.hasDelta = true;
+        dispatch({ type: "assistant_draft_replaced", id: draftId, content: event.delta });
+      } else {
+        dispatch({ type: "assistant_draft_delta", id: draftId, delta: event.delta });
+      }
+      return;
+    }
+
+    if (event.type === "error") {
+      streamState.errorShown = true;
+      dispatch({ type: "system_event", content: event.message, artifactId });
+      return;
+    }
+
+    if (event.error && !streamState.errorShown) {
+      streamState.errorShown = true;
+      dispatch({ type: "system_event", content: event.error, artifactId });
+    }
+
+    if (event.artifact) {
+      dispatch({ type: "artifact_attached_to_message", id: draftId, artifact: event.artifact, trace: event.trace, content: event.message });
+    } else {
+      dispatch({ type: "assistant_draft_completed", id: draftId, content: event.message, artifactId });
+    }
+
+    if (event.commands.length) {
+      dispatch({ type: "enqueue_commands", commands: event.commands });
+    }
+  }
+
+  async function readAgentStream(response: Response, draftId: string, artifactId: string | undefined, signal: AbortSignal) {
+    if (!response.ok) {
+      const data = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
+      throw new Error(data?.error ?? data?.message ?? response.statusText);
+    }
+    if (!response.body) throw new Error("Agent stream did not include a response body.");
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const streamState = { hasDelta: false, errorShown: false };
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lastBoundary = buffer.lastIndexOf("\n\n");
+        if (lastBoundary === -1) continue;
+
+        const completeBlocks = buffer.slice(0, lastBoundary + 2);
+        buffer = buffer.slice(lastBoundary + 2);
+        for (const event of decodeAgentStreamEvents(completeBlocks)) {
+          processStreamEvent(event, draftId, artifactId, streamState);
+        }
+      }
+
+      buffer += decoder.decode();
+      if (buffer.trim() && !signal.aborted) {
+        for (const event of decodeAgentStreamEvents(buffer)) {
+          processStreamEvent(event, draftId, artifactId, streamState);
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  async function streamAgentMessage(options: {
+    message: string;
+    mode: "chat" | "learning_room";
+    body: Record<string, unknown>;
+    artifactId?: string;
+    initialDraft: string;
+  }) {
+    if (busy) return;
+
+    const requestId = makeClientId("request");
+    const draftId = makeClientId("draft");
+    const controller = new AbortController();
+
+    dispatch({ type: "user_message", content: options.message });
+    dispatch({ type: "assistant_draft_started", id: draftId, content: options.initialDraft, artifactId: options.artifactId });
+    setPendingRequest({ id: requestId, draftId, controller });
+
     try {
       const response = await fetch("/api/agent", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "chat", threadId: activeThreadId, userId, message, messages: state.messages }),
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({ ...options.body, mode: options.mode, stream: true }),
+        signal: controller.signal,
       });
-      const data = await readJson<ChatAgentResponse>(response);
-      if (data.artifact) {
-        dispatch({ type: "artifact_created", artifact: data.artifact, trace: data.trace, message: data.message });
-      } else {
-        dispatch({ type: "assistant_message", content: data.message });
-        if (data.error) dispatch({ type: "system_event", content: data.error });
-      }
+      await readAgentStream(response, draftId, options.artifactId, controller.signal);
     } catch (error) {
-      dispatch({ type: "system_event", content: error instanceof Error ? error.message : "Unknown agent error" });
+      if (isAbortError(error) || controller.signal.aborted) {
+        dispatch({ type: "assistant_draft_stopped", id: draftId });
+      } else {
+        dispatch({ type: "assistant_draft_stopped", id: draftId });
+        dispatch({
+          type: "system_event",
+          content: error instanceof Error ? error.message : "Unknown agent error",
+          artifactId: options.artifactId,
+        });
+      }
     } finally {
-      setBusy(false);
+      setPendingRequest((current) => (current?.id === requestId ? null : current));
     }
+  }
+
+  async function sendChatMessage(message: string) {
+    await streamAgentMessage({
+      message,
+      mode: "chat",
+      initialDraft: "Let me think this through...",
+      body: { threadId: activeThreadId, userId, message, messages: state.messages },
+    });
   }
 
   async function sendLearningRoomMessage(message: string) {
     if (!activeArtifact) return;
-    dispatch({ type: "user_message", content: message });
-    setBusy(true);
-    try {
-      const response = await fetch("/api/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "learning_room",
-          threadId: activeThreadId,
-          userId,
-          message,
-          artifact: activeArtifact,
-          messages: state.messages,
-          selectedComponent: state.selectedComponent,
-          activeStepId: state.activeStepId,
-        }),
-      });
-      const data = await readJson<LearningRoomAgentResponse>(response);
-      dispatch({ type: "assistant_message", content: data.message, artifactId: activeArtifact.id });
-      if (data.commands.length) dispatch({ type: "enqueue_commands", commands: data.commands });
-    } catch (error) {
-      dispatch({ type: "system_event", content: error instanceof Error ? error.message : "Unknown learning-room agent error", artifactId: activeArtifact.id });
-    } finally {
-      setBusy(false);
-    }
+    await streamAgentMessage({
+      message,
+      mode: "learning_room",
+      artifactId: activeArtifact.id,
+      initialDraft: "Thinking...",
+      body: {
+        threadId: activeThreadId,
+        userId,
+        message,
+        artifact: activeArtifact,
+        messages: state.messages,
+        selectedComponent: state.selectedComponent,
+        activeStepId: state.activeStepId,
+      },
+    });
   }
 
   function enterExperience(artifactId: string) {
@@ -125,6 +228,7 @@ export function ParallaxArtifactApp() {
         pendingCommands={state.pendingCommands}
         selectedComponent={state.selectedComponent}
         busy={busy}
+        onStopResponse={stopResponse}
         onExit={() => dispatch({ type: "exit_experience" })}
         onResetSession={resetSession}
         onLearningRoomMessage={sendLearningRoomMessage}
@@ -168,7 +272,7 @@ export function ParallaxArtifactApp() {
               </div>
               <span className="metric-badge">{busy ? "AGENT ACTIVE" : "READY"}</span>
             </div>
-            <ChatComposer disabled={busy} placeholder="Ask to learn any STEM topic" onSubmit={sendChatMessage} />
+            <ChatComposer disabled={false} pending={busy} placeholder="Ask to learn any STEM topic" onStop={stopResponse} onSubmit={sendChatMessage} />
              <div className="prompt-grid">
                {["Explain a fusion reactor", "Build a neuron synapse", "Show orbital resonance", "Model DNA replication"].map((prompt) => (
                  <button className="prompt-chip" key={prompt} type="button" onClick={() => void sendChatMessage(prompt)} disabled={busy}>

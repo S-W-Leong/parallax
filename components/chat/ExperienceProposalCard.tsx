@@ -6,12 +6,13 @@ import type { ArtifactRecord } from "@/lib/artifacts/artifactTypes";
 type ExperienceProposalCardProps = {
   artifact: ArtifactRecord;
   trace: string[];
+  mode?: "full" | "compact";
   onEnterExperience: (artifactId: string) => void;
 };
 
-export function ExperienceProposalCard({ artifact, trace, onEnterExperience }: ExperienceProposalCardProps) {
+export function ExperienceProposalCard({ artifact, trace, mode = "full", onEnterExperience }: ExperienceProposalCardProps) {
   return (
-    <article className="proposal-card">
+    <article className={`proposal-card proposal-card-${mode}`}>
       <div className="proposal-head">
         <div>
           <p className="eyebrow">Experience ready</p>

@@ -15,6 +15,7 @@ type LearningRoomProps = {
   pendingCommands: ArtifactCommand[];
   selectedComponent: SelectedComponent | null;
   busy: boolean;
+  onStopResponse: () => void;
   onExit: () => void;
   onResetSession: () => void;
   onLearningRoomMessage: (message: string) => void;
@@ -33,6 +34,7 @@ export function LearningRoom({
   pendingCommands,
   selectedComponent,
   busy,
+  onStopResponse,
   onExit,
   onResetSession,
   onLearningRoomMessage,
@@ -141,7 +143,7 @@ export function LearningRoom({
           </div>
         </header>
         <ChatThread messages={roomMessages} artifacts={artifacts} trace={trace} onEnterExperience={onEnterExperience} showArtifactCards={false} />
-        <ChatComposer disabled={busy} placeholder="Ask about this room" onSubmit={onLearningRoomMessage} />
+        <ChatComposer disabled={false} pending={busy} placeholder="Ask about this room" onStop={onStopResponse} onSubmit={onLearningRoomMessage} />
         <section className="command-log">
           <p className="eyebrow">
             <Braces size={14} /> Command buffer

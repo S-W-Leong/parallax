@@ -9,9 +9,10 @@ type ChatThreadProps = {
   trace: string[];
   onEnterExperience: (artifactId: string) => void;
   showArtifactCards?: boolean;
+  proposalMode?: "full" | "compact";
 };
 
-export function ChatThread({ messages, artifacts, trace, onEnterExperience, showArtifactCards = true }: ChatThreadProps) {
+export function ChatThread({ messages, artifacts, trace, onEnterExperience, showArtifactCards = true, proposalMode = "full" }: ChatThreadProps) {
   if (!messages.length) {
     return (
       <div className="empty-thread">
@@ -29,9 +30,15 @@ export function ChatThread({ messages, artifacts, trace, onEnterExperience, show
           <div className={`message-row message-${message.role}`} key={message.id}>
             <div className="message-stack">
               <div className="message-bubble">
-                <p>{message.content}</p>
+                <p>
+                  {message.content}
+                  {message.status === "streaming" ? <span className="streaming-cursor" aria-hidden="true" /> : null}
+                </p>
+                {message.status === "stopped" ? <span className="message-status">Stopped</span> : null}
               </div>
-              {artifact && showArtifactCards ? <ExperienceProposalCard artifact={artifact} trace={trace} onEnterExperience={onEnterExperience} /> : null}
+              {artifact && showArtifactCards ? (
+                <ExperienceProposalCard artifact={artifact} trace={trace} mode={proposalMode} onEnterExperience={onEnterExperience} />
+              ) : null}
             </div>
           </div>
         );
