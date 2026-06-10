@@ -435,25 +435,11 @@ a {
   overflow: visible;
 }
 
-.parallax-logo .logo-accent {
-  fill: var(--accent);
-  stroke: var(--ink);
-  stroke-width: 4;
-  stroke-linejoin: round;
-}
-
-.parallax-logo .logo-inner,
-.parallax-logo .logo-line {
-  fill: none;
-  stroke: var(--ink);
-  stroke-width: 3.25;
-  stroke-linejoin: round;
-}
-
-.parallax-logo .logo-core {
+.parallax-logo .logo-tri {
   fill: var(--panel);
   stroke: var(--ink);
-  stroke-width: 2.5;
+  stroke-width: 1.75;
+  stroke-linejoin: round;
 }
 
 .rail-label,

@@ -1,0 +1,6 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - img "Parallax" [ref=e5]
+      - generic [ref=e9]: Parallax
+    - paragraph [ref=e10]: Session restore
