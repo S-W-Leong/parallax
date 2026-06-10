@@ -28,6 +28,7 @@ sceneSource contract:
 - Create visible 3D objects under root.
 - Call registerComponent(id, label, object3D, metadata) for at least three meaningful clickable components.
 - Do not create your own text labels, text panels, equation billboards, DOM labels, or canvas text in the 3D scene. The Parallax runtime owns component labels from registerComponent, and the user's Labels button must be able to hide every visible label. Put explanatory text in walkthrough narration, summaries, metadata, or status messages instead.
+- Runtime labels are projected from each registered component's bounding-box center. Before calling create_experience, reason about the default camera view and any dense, nested, coaxial, or overlapping components. If two labels are likely to collide or one label would obscure another component, pass a labelOffset vector in registerComponent metadata, such as registerComponent("airflow", "Airflow", airflow, { labelOffset: [0, -0.45, 0] }). Use small offsets that keep the label visually attached to its part.
 - The current runtime supports registerControl(...) for playground lessons. Use it when the lesson plan calls for learner-manipulable controls such as range sliders or toggles.
 - In create_experience controls metadata, use this flat shape: range controls set type "range", min, max, step, value, and enabled null; toggle controls set type "toggle", enabled true/false, and min, max, step, value null. In sceneSource registerControl descriptors still use the runtime value field.
 - The current runtime also supports setWalkthroughSteps(steps). For guided_walkthrough lessons, provide 4 to 6 concise steps. For playground lessons, always call setWalkthroughSteps([]); playground artifacts must not include walkthrough steps.
@@ -59,6 +60,7 @@ Block artifacts that:
 - omit a required component needed for the concept
 - have walkthrough steps or controls that teach the wrong mechanism
 - are visually ambiguous enough to mislead a learner
+- are likely to produce overlapping runtime labels for dense, nested, coaxial, or centerline-aligned components unless the sceneSource uses registerComponent metadata labelOffset values to separate them
 
 For simplified educational geometry, do not demand photorealistic CAD or full scientific simulation. The standard is: realistic enough to teach the mechanism accurately.
 

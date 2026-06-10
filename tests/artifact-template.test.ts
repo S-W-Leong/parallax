@@ -80,7 +80,10 @@ setWalkthroughSteps([]);
   const windowObject = {} as { registerControl?: (descriptor: ArtifactControl | string, callback: (value: number | boolean) => void) => unknown };
   const documentObject = { createElement: () => makeElement() };
   const camera = { lookAt: () => undefined };
-  const THREE = { Vector3: class Vector3 {} };
+  const THREE = {
+    Color: class Color {},
+    Vector3: class Vector3 {},
+  };
   const scene = {};
   const renderer = {};
   const root = {};
@@ -198,6 +201,91 @@ setWalkthroughSteps([{id:"s",title:"S",narration:"N",targetComponentIds:["a"]}])
     expect(html).toContain("target: new THREE.Vector3()");
     expect(html).toContain("fitCameraToRegisteredComponents()");
     expect(html).toContain("controls.target.copy(target)");
+  });
+
+  it("lets pointer dragging rotate the artifact through full turns without pitch clamping", () => {
+    const html = renderArtifactHtml({
+      id: "artifact-rotation-test",
+      title: "Rotation Test",
+      topic: "runtime controls",
+      summary: "Checks pointer drag rotation behavior.",
+      sceneSource: `
+const marker = new THREE.Group();
+root.add(marker);
+registerComponent("a", "A", marker, {});
+registerComponent("b", "B", marker, {});
+registerComponent("c", "C", marker, {});
+setWalkthroughSteps([{id:"s",title:"S",narration:"N",targetComponentIds:["a"]}]);
+`,
+      components: [
+        { id: "a", label: "A" },
+        { id: "b", label: "B" },
+        { id: "c", label: "C" },
+      ],
+      walkthroughSteps: [{ id: "s", title: "S", narration: "N", targetComponentIds: ["a"] }],
+    });
+
+    expect(html).toContain("function wrapRotation");
+    expect(html).toContain("root.rotation.y = wrapRotation(root.rotation.y + dx * 0.006)");
+    expect(html).toContain("root.rotation.x = wrapRotation(root.rotation.x + dy * 0.003)");
+    expect(html).not.toContain("Math.max(-1.2, Math.min(1.2, root.rotation.x))");
+  });
+
+  it("supports metadata label offsets for overlapping component labels", () => {
+    const html = renderArtifactHtml({
+      id: "artifact-label-offset-test",
+      title: "Label Offset Test",
+      topic: "runtime labels",
+      summary: "Checks label offset behavior.",
+      sceneSource: `
+const shaft = new THREE.Group();
+const airflow = new THREE.Group();
+root.add(shaft, airflow);
+registerComponent("shaft", "Shaft", shaft, {});
+registerComponent("airflow", "Airflow", airflow, { labelOffset: [0, -0.45, 0] });
+registerComponent("nozzle", "Nozzle", new THREE.Group(), {});
+setWalkthroughSteps([{id:"s",title:"S",narration:"N",targetComponentIds:["airflow"]}]);
+`,
+      components: [
+        { id: "shaft", label: "Shaft" },
+        { id: "airflow", label: "Airflow" },
+        { id: "nozzle", label: "Nozzle" },
+      ],
+      walkthroughSteps: [{ id: "s", title: "S", narration: "N", targetComponentIds: ["airflow"] }],
+    });
+
+    expect(html).toContain("function labelPositionFor");
+    expect(html).toContain("component.metadata && component.metadata.labelOffset");
+    expect(html).toContain("center.add(new THREE.Vector3(offset[0], offset[1], offset[2]))");
+  });
+
+  it("brightens and outlines selected runtime components", () => {
+    const html = renderArtifactHtml({
+      id: "artifact-selection-highlight-test",
+      title: "Selection Highlight Test",
+      topic: "runtime selection",
+      summary: "Checks selected component highlighting behavior.",
+      sceneSource: `
+const marker = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+root.add(marker);
+registerComponent("a", "A", marker, {});
+registerComponent("b", "B", marker, {});
+registerComponent("c", "C", marker, {});
+setWalkthroughSteps([{id:"s",title:"S",narration:"N",targetComponentIds:["a"]}]);
+`,
+      components: [
+        { id: "a", label: "A" },
+        { id: "b", label: "B" },
+        { id: "c", label: "C" },
+      ],
+      walkthroughSteps: [{ id: "s", title: "S", narration: "N", targetComponentIds: ["a"] }],
+    });
+
+    expect(html).toContain("function highlightComponent");
+    expect(html).toContain("new THREE.BoxHelper(component.object3D, 0x62e6d2)");
+    expect(html).toContain("child.material = Array.isArray(originalMaterial)");
+    expect(html).toContain("setSelectedComponent(component, true)");
+    expect(html).toContain("selectedHighlight.outline.update()");
   });
 
   it("fits the camera using object bounds instead of a fixed offset", () => {

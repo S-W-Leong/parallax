@@ -194,6 +194,12 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
       white-space: nowrap;
       box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
     }
+    .label.label-selected {
+      border-color: rgba(98, 230, 210, .95);
+      background: rgba(10, 32, 42, .9);
+      color: #ffffff;
+      box-shadow: 0 0 0 1px rgba(98, 230, 210, .24), 0 10px 30px rgba(98, 230, 210, .24);
+    }
     @media (max-width: 720px) {
       #hud { grid-template-columns: 1fr; }
       #controls { justify-content: flex-start; max-width: none; }
@@ -285,6 +291,12 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
       const renderedControls = new Map();
       const objectToComponent = new WeakMap();
       const labels = new Map();
+      const highlightColor = new THREE.Color(0x62e6d2);
+      const selectedHighlight = {
+        componentId: null,
+        materialEntries: [],
+        outline: null,
+      };
       let walkthroughSteps = artifactPayload.walkthroughSteps || [];
       let currentStepIndex = 0;
       let labelsVisible = true;
@@ -308,6 +320,11 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         return object3D && typeof object3D.traverse === "function";
       }
 
+      function wrapRotation(angle) {
+        const fullTurn = Math.PI * 2;
+        return ((angle % fullTurn) + fullTurn) % fullTurn;
+      }
+
       function labelFor(component) {
         let label = labels.get(component.id);
         if (!label) {
@@ -318,6 +335,95 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
           labels.set(component.id, label);
         }
         return label;
+      }
+
+      function cloneHighlightedMaterial(material) {
+        if (!material || typeof material.clone !== "function") return null;
+        const highlighted = material.clone();
+        if (highlighted.color && typeof highlighted.color.lerp === "function") {
+          highlighted.color.lerp(new THREE.Color(0xffffff), 0.42);
+        }
+        if (highlighted.emissive && typeof highlighted.emissive.lerp === "function") {
+          highlighted.emissive.lerp(highlightColor, 0.85);
+          highlighted.emissiveIntensity = Math.max(Number(highlighted.emissiveIntensity) || 0, 0.85);
+        }
+        highlighted.needsUpdate = true;
+        return highlighted;
+      }
+
+      function cloneHighlightedMaterials(originalMaterial) {
+        if (Array.isArray(originalMaterial)) {
+          let changed = false;
+          const highlightedMaterials = originalMaterial.map((material) => {
+            const highlighted = cloneHighlightedMaterial(material);
+            if (!highlighted) return material;
+            changed = true;
+            return highlighted;
+          });
+          return changed ? highlightedMaterials : null;
+        }
+        return cloneHighlightedMaterial(originalMaterial);
+      }
+
+      function disposeHighlightedMaterial(material, originalMaterial) {
+        if (Array.isArray(material)) {
+          material.forEach((entry, index) => disposeHighlightedMaterial(entry, Array.isArray(originalMaterial) ? originalMaterial[index] : null));
+          return;
+        }
+        if (material && material !== originalMaterial && typeof material.dispose === "function") {
+          material.dispose();
+        }
+      }
+
+      function clearSelectionHighlight() {
+        for (const entry of selectedHighlight.materialEntries) {
+          entry.child.material = entry.originalMaterial;
+          disposeHighlightedMaterial(entry.highlightedMaterial, entry.originalMaterial);
+        }
+        selectedHighlight.materialEntries = [];
+        if (selectedHighlight.outline) {
+          scene.remove(selectedHighlight.outline);
+          if (selectedHighlight.outline.geometry) selectedHighlight.outline.geometry.dispose();
+          if (selectedHighlight.outline.material) selectedHighlight.outline.material.dispose();
+          selectedHighlight.outline = null;
+        }
+        if (selectedHighlight.componentId) {
+          const label = labels.get(selectedHighlight.componentId);
+          if (label) label.classList.remove("label-selected");
+        }
+        selectedHighlight.componentId = null;
+      }
+
+      function highlightComponent(component) {
+        clearSelectionHighlight();
+        component.object3D.traverse((child) => {
+          if (!child.material) return;
+          const originalMaterial = child.material;
+          const highlightedMaterial = cloneHighlightedMaterials(originalMaterial);
+          if (!highlightedMaterial) return;
+          child.material = Array.isArray(originalMaterial)
+            ? highlightedMaterial
+            : highlightedMaterial;
+          selectedHighlight.materialEntries.push({ child, originalMaterial, highlightedMaterial });
+        });
+
+        const outline = new THREE.BoxHelper(component.object3D, 0x62e6d2);
+        outline.renderOrder = 999;
+        if (outline.material) {
+          outline.material.depthTest = false;
+          outline.material.transparent = true;
+          outline.material.opacity = 0.95;
+        }
+        selectedHighlight.outline = outline;
+        selectedHighlight.componentId = component.id;
+        scene.add(outline);
+        labelFor(component).classList.add("label-selected");
+      }
+
+      function setSelectedComponent(component, emit) {
+        highlightComponent(component);
+        setStatus("Selected: " + component.label);
+        if (emit) postArtifactEvent({ type: "component_selected", componentId: component.id, label: component.label, metadata: component.metadata });
       }
 
       window.registerComponent = function registerComponent(id, label, object3D, metadata) {
@@ -511,6 +617,19 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         return box.getCenter(new THREE.Vector3());
       }
 
+      function labelPositionFor(component) {
+        const center = centerOf(component.object3D);
+        const offset = component.metadata && component.metadata.labelOffset;
+        if (
+          Array.isArray(offset) &&
+          offset.length === 3 &&
+          offset.every((value) => Number.isFinite(value))
+        ) {
+          center.add(new THREE.Vector3(offset[0], offset[1], offset[2]));
+        }
+        return center;
+      }
+
       function boundsOf(object3D) {
         const box = new THREE.Box3().setFromObject(object3D);
         if (box.isEmpty()) {
@@ -629,7 +748,7 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
           return;
         }
         window.fitCameraTo(component.object3D);
-        postArtifactEvent({ type: "component_selected", componentId: component.id, label: component.label, metadata: component.metadata });
+        setSelectedComponent(component, true);
       }
 
       function handleCommand(command) {
@@ -661,9 +780,8 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         const dx = event.clientX - dragStart.x;
         const dy = event.clientY - dragStart.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) dragStart.moved = true;
-        root.rotation.y += dx * 0.006;
-        root.rotation.x += dy * 0.003;
-        root.rotation.x = Math.max(-1.2, Math.min(1.2, root.rotation.x));
+        root.rotation.y = wrapRotation(root.rotation.y + dx * 0.006);
+        root.rotation.x = wrapRotation(root.rotation.x + dy * 0.003);
         dragStart.x = event.clientX;
         dragStart.y = event.clientY;
       });
@@ -680,8 +798,7 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         if (!hit) return;
         const component = objectToComponent.get(hit.object);
         if (!component) return;
-        postArtifactEvent({ type: "component_selected", componentId: component.id, label: component.label, metadata: component.metadata });
-        setStatus("Selected: " + component.label);
+        setSelectedComponent(component, true);
       });
       renderer.domElement.addEventListener("wheel", (event) => {
         event.preventDefault();
@@ -712,7 +829,7 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         labels.forEach((label, id) => {
           const component = registered.get(id);
           if (!component || !labelsVisible) return;
-          const point = centerOf(component.object3D).project(camera);
+          const point = labelPositionFor(component).project(camera);
           label.style.left = ((point.x + 1) / 2 * window.innerWidth) + "px";
           label.style.top = ((-point.y + 1) / 2 * window.innerHeight) + "px";
           label.style.opacity = point.z > 1 ? "0" : "1";
@@ -721,6 +838,7 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
 
       function animate() {
         requestAnimationFrame(animate);
+        if (selectedHighlight.outline) selectedHighlight.outline.update();
         updateLabels();
         renderer.render(scene, camera);
       }

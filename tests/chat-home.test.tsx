@@ -4,6 +4,7 @@ import { ChatHome } from "@/components/app/ChatHome";
 
 const handlers = {
   onSendMessage: () => undefined,
+  onStarterPrompt: () => undefined,
   onStop: () => undefined,
   onEnterExperience: () => undefined,
 };
@@ -33,5 +34,14 @@ describe("ChatHome", () => {
     expect(emptyHtml).toContain('aria-hidden="true"');
     expect(emptyHtml).toContain("ambient-field");
     expect(activeHtml).not.toContain("ambient-field");
+  });
+
+  it("renders the jet engine demo as the first empty-state starter prompt", () => {
+    const emptyHtml = renderToStaticMarkup(
+      <ChatHome messages={[]} artifacts={{}} trace={[]} busy={false} {...handlers} />,
+    );
+
+    expect(emptyHtml).toContain("Tour a jet engine");
+    expect(emptyHtml.indexOf("Tour a jet engine")).toBeLessThan(emptyHtml.indexOf("Explain a fusion reactor"));
   });
 });

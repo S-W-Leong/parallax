@@ -1,6 +1,7 @@
 "use client";
 
 import type { ArtifactRecord, ChatMessage } from "@/lib/artifacts/artifactTypes";
+import { STARTER_PROMPTS, type StarterPrompt } from "@/lib/demo/jetEngineDemo";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatThread } from "@/components/chat/ChatThread";
 
@@ -10,13 +11,12 @@ type ChatHomeProps = {
   trace: string[];
   busy: boolean;
   onSendMessage: (message: string) => void;
+  onStarterPrompt: (prompt: StarterPrompt) => void;
   onStop: () => void;
   onEnterExperience: (artifactId: string) => void;
 };
 
-const STARTER_PROMPTS = ["Explain a fusion reactor", "Build a neuron synapse", "Show orbital resonance", "Model DNA replication"];
-
-export function ChatHome({ messages, artifacts, trace, busy, onSendMessage, onStop, onEnterExperience }: ChatHomeProps) {
+export function ChatHome({ messages, artifacts, trace, busy, onSendMessage, onStarterPrompt, onStop, onEnterExperience }: ChatHomeProps) {
   const hasMessages = messages.length > 0;
 
   return (
@@ -46,8 +46,8 @@ export function ChatHome({ messages, artifacts, trace, busy, onSendMessage, onSt
         {!hasMessages ? (
           <div className="starter-prompts" aria-label="Starter prompts">
             {STARTER_PROMPTS.map((prompt) => (
-              <button className="prompt-chip" key={prompt} type="button" onClick={() => onSendMessage(prompt)} disabled={busy}>
-                {prompt}
+              <button className="prompt-chip" key={prompt.id} type="button" onClick={() => onStarterPrompt(prompt)} disabled={busy}>
+                {prompt.label}
               </button>
             ))}
           </div>
