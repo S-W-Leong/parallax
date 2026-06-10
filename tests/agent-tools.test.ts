@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { makeArtifactCritiqueToolSink } from "@/lib/agent/tools/artifactCritiqueTool";
 import { makeCreateExperienceToolSink } from "@/lib/agent/tools/createExperienceTool";
 import { makeLessonPlanToolSink } from "@/lib/agent/tools/lessonPlanTool";
 import { makeResearchStemTopicTool } from "@/lib/agent/tools/researchStemTopicTool";
@@ -147,6 +148,26 @@ setWalkthroughSteps([]);
       researchUsed: false,
       sources: [],
       requiredComponents: ["spring", "mass", "energy bar"],
+      mechanismSpec: {
+        topic: "elastic potential energy",
+        sourceClaims: [
+          { claim: "Elastic potential energy increases with the square of displacement.", sourceUrl: null },
+        ],
+        components: [
+          { id: "spring", label: "Spring", role: "Stores elastic energy when stretched or compressed.", visualCues: ["coiled shape"], spatialHints: ["connects wall to mass"] },
+          { id: "mass", label: "Mass", role: "Applies displacement to the spring.", visualCues: ["movable block"], spatialHints: ["attached to spring end"] },
+          { id: "energy-bar", label: "Energy Bar", role: "Shows stored energy magnitude.", visualCues: ["height changes"], spatialHints: ["beside the spring"] },
+        ],
+        relationships: [
+          { fromComponentId: "mass", toComponentId: "spring", relationship: "transfers_energy_to", explanation: "Moving the mass deforms the spring and stores energy." },
+        ],
+        flows: [
+          { medium: "mechanical work", pathComponentIds: ["mass", "spring"], direction: "from displaced mass into the spring", causeEffect: "More displacement stores more elastic energy." },
+        ],
+        learnerInteractions: [
+          { type: "slider", purpose: "Change displacement and compare energy response." },
+        ],
+      },
       builderBrief: "Build a spring-mass playground with a displacement slider and energy bar.",
     }));
 
@@ -163,6 +184,26 @@ setWalkthroughSteps([]);
         researchUsed: false,
         sources: [],
         requiredComponents: ["spring", "mass", "energy bar"],
+        mechanismSpec: {
+          topic: "elastic potential energy",
+          sourceClaims: [
+            { claim: "Elastic potential energy increases with the square of displacement.", sourceUrl: undefined },
+          ],
+          components: [
+            { id: "spring", label: "Spring", role: "Stores elastic energy when stretched or compressed.", visualCues: ["coiled shape"], spatialHints: ["connects wall to mass"] },
+            { id: "mass", label: "Mass", role: "Applies displacement to the spring.", visualCues: ["movable block"], spatialHints: ["attached to spring end"] },
+            { id: "energy-bar", label: "Energy Bar", role: "Shows stored energy magnitude.", visualCues: ["height changes"], spatialHints: ["beside the spring"] },
+          ],
+          relationships: [
+            { fromComponentId: "mass", toComponentId: "spring", relationship: "transfers_energy_to", explanation: "Moving the mass deforms the spring and stores energy." },
+          ],
+          flows: [
+            { medium: "mechanical work", pathComponentIds: ["mass", "spring"], direction: "from displaced mass into the spring", causeEffect: "More displacement stores more elastic energy." },
+          ],
+          learnerInteractions: [
+            { type: "slider", purpose: "Change displacement and compare energy response." },
+          ],
+        },
         builderBrief: "Build a spring-mass playground with a displacement slider and energy bar.",
       },
     });
@@ -180,6 +221,7 @@ setWalkthroughSteps([]);
       researchUsed: false,
       sources: [],
       requiredComponents: [],
+      mechanismSpec: null,
       builderBrief: null,
     }));
 
@@ -192,6 +234,7 @@ setWalkthroughSteps([]);
         researchUsed: false,
         sources: [],
         requiredComponents: [],
+        mechanismSpec: undefined,
       },
     });
   });
@@ -208,11 +251,54 @@ setWalkthroughSteps([]);
       researchUsed: false,
       sources: [],
       requiredComponents: ["spring"],
+      mechanismSpec: null,
       builderBrief: "Build the spring playground.",
     }));
 
     expect(output).toContain("InvalidToolInputError");
     expect(sink.getResult()).toBeNull();
+  });
+
+  it("requires a mechanism spec for artifact-needed lesson plans", async () => {
+    const sink = makeLessonPlanToolSink();
+    const output = await sink.tool.invoke(undefined as never, JSON.stringify({
+      artifactNeeded: true,
+      lessonMode: "guided_walkthrough",
+      title: "Inside a Cell",
+      topic: "cell biology",
+      rationale: "A guided tour helps learners connect organelles.",
+      interactionGoal: "Trace how organelles coordinate inside the cell.",
+      researchUsed: false,
+      sources: [],
+      requiredComponents: ["membrane", "nucleus", "ribosome"],
+      mechanismSpec: null,
+      builderBrief: "Build a guided cell room.",
+    }));
+
+    expect(output).toContain("InvalidToolInputError");
+    expect(sink.getResult()).toBeNull();
+  });
+
+  it("records artifact critic verdicts with repair instructions", async () => {
+    const sink = makeArtifactCritiqueToolSink();
+    const output = await sink.tool.invoke(undefined as never, JSON.stringify({
+      approved: false,
+      factualIssues: ["The turbine is shown driving the fan directly without the shaft."],
+      visualIssues: ["Airflow arrows move backward through the compressor."],
+      interactionIssues: ["The walkthrough skips the shaft power transfer."],
+      missingComponents: ["central shaft"],
+      repairInstructions: "Add a central shaft, show turbine-to-shaft-to-compressor power transfer, and reverse compressor airflow arrows.",
+    }));
+
+    expect(output).toMatchObject({ ok: true, approved: false, issueCount: 4 });
+    expect(sink.getResult()).toEqual({
+      approved: false,
+      factualIssues: ["The turbine is shown driving the fan directly without the shaft."],
+      visualIssues: ["Airflow arrows move backward through the compressor."],
+      interactionIssues: ["The walkthrough skips the shaft power transfer."],
+      missingComponents: ["central shaft"],
+      repairInstructions: "Add a central shaft, show turbine-to-shaft-to-compressor power transfer, and reverse compressor airflow arrows.",
+    });
   });
 
   it("does not expose tuple-style or property-name JSON schema features in lesson-plan parameters", () => {

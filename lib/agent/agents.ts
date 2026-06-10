@@ -1,6 +1,7 @@
 import { Agent, type Tool } from "@openai/agents";
 import {
   BUILDER_AGENT_PROMPT,
+  CRITIC_AGENT_PROMPT,
   PLANNER_AGENT_PROMPT,
   TUTOR_AGENT_PROMPT,
 } from "./prompts";
@@ -21,6 +22,15 @@ export function makeBuilderAgent(tools: Tool[]) {
     name: "Parallax Builder",
     model,
     instructions: BUILDER_AGENT_PROMPT,
+    tools,
+  });
+}
+
+export function makeCriticAgent(tools: Tool[]) {
+  return new Agent({
+    name: "Parallax Artifact Critic",
+    model,
+    instructions: CRITIC_AGENT_PROMPT,
     tools,
   });
 }

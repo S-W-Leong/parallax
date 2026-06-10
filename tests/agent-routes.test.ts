@@ -3,10 +3,16 @@ import type { ArtifactRecord } from "@/lib/artifacts/artifactTypes";
 
 const createExperienceState = vi.hoisted(() => ({
   result: null as unknown,
+  results: [] as unknown[],
+  clearCount: 0,
 }));
 
 const lessonPlanState = vi.hoisted(() => ({
   result: null as unknown,
+}));
+
+const artifactCritiqueState = vi.hoisted(() => ({
+  results: [] as unknown[],
 }));
 
 const artifactCommandState = vi.hoisted(() => ({
@@ -25,7 +31,11 @@ vi.mock("@/lib/agent/tools/createExperienceTool", () => {
   return {
     makeCreateExperienceToolSink: vi.fn(() => ({
       tool: {},
-      getResult: () => createExperienceState.result,
+      getResult: () => createExperienceState.results.shift() ?? createExperienceState.result,
+      clearResult: () => {
+        createExperienceState.result = null;
+        createExperienceState.clearCount += 1;
+      },
     })),
   };
 });
@@ -35,6 +45,15 @@ vi.mock("@/lib/agent/tools/lessonPlanTool", () => {
     makeLessonPlanToolSink: vi.fn(() => ({
       tool: {},
       getResult: () => lessonPlanState.result,
+    })),
+  };
+});
+
+vi.mock("@/lib/agent/tools/artifactCritiqueTool", () => {
+  return {
+    makeArtifactCritiqueToolSink: vi.fn(() => ({
+      tool: {},
+      getResult: () => artifactCritiqueState.results.shift() ?? null,
     })),
   };
 });
@@ -60,6 +79,8 @@ const { run } = await import("@openai/agents");
 const mockedRun = vi.mocked(run);
 const { makeCreateExperienceToolSink } = await import("@/lib/agent/tools/createExperienceTool");
 const mockedMakeCreateExperienceToolSink = vi.mocked(makeCreateExperienceToolSink);
+const { makeArtifactCritiqueToolSink } = await import("@/lib/agent/tools/artifactCritiqueTool");
+const mockedMakeArtifactCritiqueToolSink = vi.mocked(makeArtifactCritiqueToolSink);
 const { getThreadStore } = await import("@/lib/cloud/threadStore");
 const mockedGetThreadStore = vi.mocked(getThreadStore);
 
@@ -110,6 +131,36 @@ function parseBuilderLessonPlan(prompt: unknown) {
     builderBrief: string;
   }>(prompt, "Lesson plan:\n");
 }
+
+const mechanismSpec = {
+  topic: "cell biology",
+  sourceClaims: [
+    { claim: "The cell membrane regulates exchange with the environment.", sourceUrl: "https://example.com/cells" },
+  ],
+  components: [
+    { id: "membrane", label: "Cell membrane", role: "Regulates exchange.", visualCues: ["outer boundary"], spatialHints: ["surrounds cell interior"] },
+    { id: "nucleus", label: "Nucleus", role: "Stores genetic instructions.", visualCues: ["central sphere"], spatialHints: ["inside membrane"] },
+    { id: "ribosome", label: "Ribosome", role: "Builds proteins.", visualCues: ["small dots"], spatialHints: ["distributed in cytoplasm"] },
+  ],
+  relationships: [
+    { fromComponentId: "membrane", toComponentId: "nucleus", relationship: "contains", explanation: "The membrane encloses the cell interior that contains the nucleus." },
+  ],
+  flows: [
+    { medium: "materials", pathComponentIds: ["membrane", "ribosome"], direction: "through membrane into the cell", causeEffect: "Material exchange supports protein synthesis." },
+  ],
+  learnerInteractions: [
+    { type: "walkthrough_step", purpose: "Move from cell boundary to information storage and protein synthesis." },
+  ],
+};
+
+const approvedCritique = {
+  approved: true,
+  factualIssues: [],
+  visualIssues: [],
+  interactionIssues: [],
+  missingComponents: [],
+  repairInstructions: undefined,
+};
 
 const artifact: ArtifactRecord = {
   id: "artifact-1",
@@ -163,8 +214,12 @@ describe("agent routes", () => {
     mockedRun.mockReset();
     mockedGetThreadStore.mockReset();
     mockedMakeCreateExperienceToolSink.mockClear();
+    mockedMakeArtifactCritiqueToolSink.mockClear();
     createExperienceState.result = null;
+    createExperienceState.results = [];
+    createExperienceState.clearCount = 0;
     lessonPlanState.result = null;
+    artifactCritiqueState.results = [approvedCritique];
     artifactCommandState.commands = [];
   });
 
@@ -203,6 +258,26 @@ describe("agent routes", () => {
         researchUsed: false,
         sources: [],
         requiredComponents: ["spring", "mass", "energy bar"],
+        mechanismSpec: {
+          topic: "elastic potential energy",
+          sourceClaims: [
+            { claim: "Elastic potential energy increases with the square of displacement.", sourceUrl: undefined },
+          ],
+          components: [
+            { id: "spring", label: "Spring", role: "Stores elastic energy.", visualCues: ["coiled metal"], spatialHints: ["left of mass"] },
+            { id: "mass", label: "Mass", role: "Applies displacement.", visualCues: ["movable block"], spatialHints: ["attached to spring"] },
+            { id: "energy-bar", label: "Energy Bar", role: "Shows stored energy.", visualCues: ["height-changing bar"], spatialHints: ["beside spring"] },
+          ],
+          relationships: [
+            { fromComponentId: "mass", toComponentId: "spring", relationship: "transfers_energy_to", explanation: "Displacing the mass deforms the spring." },
+          ],
+          flows: [
+            { medium: "mechanical work", pathComponentIds: ["mass", "spring"], direction: "from mass into spring", causeEffect: "More displacement stores more energy." },
+          ],
+          learnerInteractions: [
+            { type: "slider", purpose: "Change displacement." },
+          ],
+        },
         builderBrief: "Build a spring-mass playground with a displacement slider and energy bar.",
       },
     };
@@ -233,7 +308,8 @@ describe("agent routes", () => {
     };
     mockedRun
       .mockResolvedValueOnce({ finalOutput: "I will turn this into a playground." } as Awaited<ReturnType<typeof run>>)
-      .mockResolvedValueOnce({ finalOutput: "I built a spring-energy playground." } as Awaited<ReturnType<typeof run>>);
+      .mockResolvedValueOnce({ finalOutput: "I built a spring-energy playground." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "The artifact is accurate enough to show." } as Awaited<ReturnType<typeof run>>);
 
     const response = await handleAgentRoute({
       mode: "chat",
@@ -241,7 +317,7 @@ describe("agent routes", () => {
       messages: [{ id: "m1", role: "user", content: "I learn best by experimenting.", createdAt: "2026-06-10T00:00:00.000Z" }],
     });
 
-    expect(mockedRun).toHaveBeenCalledTimes(2);
+    expect(mockedRun).toHaveBeenCalledTimes(3);
     expect(mockedRun.mock.calls[0]?.[1]).toContain("Mode: chat");
     expect(parseBuilderLessonPlan(mockedRun.mock.calls[1]?.[1])).toMatchObject({
       artifactNeeded: true,
@@ -249,16 +325,167 @@ describe("agent routes", () => {
       title: "Elastic Potential Energy Playground",
       topic: "elastic potential energy",
       interactionGoal: "Change displacement and watch stored energy update.",
+      mechanismSpec: expect.objectContaining({ topic: "elastic potential energy" }),
       builderBrief: "Build a spring-mass playground with a displacement slider and energy bar.",
     });
     expect(mockedRun.mock.calls[1]?.[1]).toContain("Original user request");
+    expect(mockedRun.mock.calls[2]?.[1]).toContain("Artifact to review");
+    expect(mockedRun.mock.calls[2]?.[1]).toContain("Elastic Potential Energy Playground");
     expect(response.artifact?.lessonMode).toBe("playground");
     expect(response.trace).toEqual(expect.arrayContaining([
       expect.stringContaining("lesson mode"),
       expect.stringContaining("playground"),
       expect.stringContaining("artifact"),
       expect.stringContaining("Validating artifact contract"),
+      expect.stringContaining("Reviewing artifact accuracy"),
     ]));
+  });
+
+  it("retries once with critic feedback when the first artifact is not accurate enough", async () => {
+    const firstArtifact = {
+      ...artifact,
+      id: "artifact-bad",
+      title: "Jet Engine Cutaway",
+      topic: "jet engines",
+      summary: "A first attempt with a missing shaft.",
+    };
+    const repairedArtifact = {
+      ...artifact,
+      id: "artifact-repaired",
+      title: "Jet Engine Cutaway",
+      topic: "jet engines",
+      summary: "A repaired cutaway with shaft power transfer.",
+    };
+    lessonPlanState.result = {
+      ok: true,
+      plan: {
+        artifactNeeded: true,
+        lessonMode: "guided_walkthrough",
+        title: "Jet Engine Cutaway",
+        topic: "jet engines",
+        rationale: "A guided cutaway can show the flow and power stages.",
+        interactionGoal: "Trace airflow and shaft power through the engine.",
+        researchUsed: true,
+        sources: [{ title: "Jet Engines", url: "https://example.com/jet-engines", summary: "Turbines drive compressors through a shaft." }],
+        requiredComponents: ["fan", "compressor", "combustor", "turbine", "shaft", "nozzle"],
+        mechanismSpec: {
+          ...mechanismSpec,
+          topic: "jet engines",
+          sourceClaims: [{ claim: "The turbine powers the compressor through a central shaft.", sourceUrl: "https://example.com/jet-engines" }],
+        },
+        builderBrief: "Build a guided jet-engine cutaway.",
+      },
+    };
+    createExperienceState.results = [
+      { ok: true, artifact: firstArtifact },
+      { ok: true, artifact: repairedArtifact },
+    ];
+    artifactCritiqueState.results = [
+      {
+        approved: false,
+        factualIssues: ["The turbine appears disconnected from the compressor."],
+        visualIssues: [],
+        interactionIssues: ["The walkthrough does not explain shaft power transfer."],
+        missingComponents: ["shaft"],
+        repairInstructions: "Add a central shaft and a walkthrough step showing turbine-to-shaft-to-compressor power transfer.",
+      },
+      approvedCritique,
+    ];
+    mockedRun
+      .mockResolvedValueOnce({ finalOutput: "Plan ready." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "I built the first cutaway." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "This needs repair." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "I repaired the cutaway." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "The repaired cutaway is accurate enough to show." } as Awaited<ReturnType<typeof run>>);
+
+    const response = await handleAgentRoute({
+      mode: "chat",
+      message: "Build a jet engine cutaway",
+      messages: [],
+    });
+
+    expect(mockedRun).toHaveBeenCalledTimes(5);
+    expect(createExperienceState.clearCount).toBe(1);
+    expect(mockedRun.mock.calls[3]?.[1]).toContain("Critic feedback from previous attempt");
+    expect(mockedRun.mock.calls[3]?.[1]).toContain("central shaft");
+    expect(response).toMatchObject({
+      message: "I repaired the cutaway.",
+      artifact: { id: "artifact-repaired" },
+      error: null,
+    });
+    expect(response.trace).toEqual(expect.arrayContaining([
+      "Reviewing artifact accuracy",
+      "Repairing artifact from critic feedback",
+      "Re-reviewing artifact accuracy",
+    ]));
+  });
+
+  it("blocks the artifact when the critic still rejects the single repair attempt", async () => {
+    lessonPlanState.result = {
+      ok: true,
+      plan: {
+        artifactNeeded: true,
+        lessonMode: "guided_walkthrough",
+        title: "Jet Engine Cutaway",
+        topic: "jet engines",
+        rationale: "A guided cutaway can show the flow and power stages.",
+        interactionGoal: "Trace airflow and shaft power through the engine.",
+        researchUsed: true,
+        sources: [{ title: "Jet Engines", url: "https://example.com/jet-engines", summary: "Turbines drive compressors through a shaft." }],
+        requiredComponents: ["fan", "compressor", "combustor", "turbine", "shaft", "nozzle"],
+        mechanismSpec: {
+          ...mechanismSpec,
+          topic: "jet engines",
+          sourceClaims: [{ claim: "The turbine powers the compressor through a central shaft.", sourceUrl: "https://example.com/jet-engines" }],
+        },
+        builderBrief: "Build a guided jet-engine cutaway.",
+      },
+    };
+    createExperienceState.results = [
+      { ok: true, artifact },
+      { ok: true, artifact: replacementArtifact },
+    ];
+    artifactCritiqueState.results = [
+      {
+        approved: false,
+        factualIssues: ["The shaft is missing."],
+        visualIssues: [],
+        interactionIssues: [],
+        missingComponents: ["shaft"],
+        repairInstructions: "Add the central shaft.",
+      },
+      {
+        approved: false,
+        factualIssues: ["The shaft is present but not connected to the turbine."],
+        visualIssues: [],
+        interactionIssues: ["The walkthrough still implies direct fan drive."],
+        missingComponents: [],
+        repairInstructions: "Connect the shaft to the turbine and compressor before showing the room.",
+      },
+    ];
+    mockedRun
+      .mockResolvedValueOnce({ finalOutput: "Plan ready." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "I built the first cutaway." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "This needs repair." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "I repaired the cutaway." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "This still needs repair." } as Awaited<ReturnType<typeof run>>);
+
+    const response = await handleAgentRoute({
+      mode: "chat",
+      message: "Build a jet engine cutaway",
+      messages: [],
+    });
+
+    expect(response).toEqual({
+      message: expect.stringContaining("couldn't generate a reliable artifact"),
+      trace: expect.arrayContaining([
+        "Reviewing artifact accuracy",
+        "Repairing artifact from critic feedback",
+        "Re-reviewing artifact accuracy",
+      ]),
+      artifact: null,
+      error: expect.stringContaining("shaft is present but not connected"),
+    });
   });
 
   it("answers learning-room questions through the same route contract", async () => {
@@ -819,13 +1046,14 @@ describe("agent routes", () => {
     const response = handleAgentRouteStream({ mode: "chat", message: "Help me understand elastic potential energy", messages: [] });
     const events = decodeAgentStreamEvents(await new Response(response).text());
 
-    expect(mockedRun).toHaveBeenCalledTimes(2);
+    expect(mockedRun).toHaveBeenCalledTimes(3);
     expect(mockedRun.mock.calls[0]?.[2]).toEqual({ maxTurns: 6, signal: expect.any(AbortSignal) });
     expect(mockedRun.mock.calls[1]?.[2]).toEqual({
       maxTurns: 8,
       stream: true,
       signal: expect.any(AbortSignal),
     });
+    expect(mockedRun.mock.calls[2]?.[2]).toEqual({ maxTurns: 4 });
     expect(events).toEqual([
       { type: "status", message: "Thinking..." },
       { type: "status", message: "Selected playground mode..." },

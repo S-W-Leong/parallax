@@ -77,7 +77,7 @@ setWalkthroughSteps([]);
 
   const block = html.slice(start, end);
   const playgroundControls = makeElement();
-  const windowObject = {} as { registerControl?: (descriptor: ArtifactControl, callback: (value: number | boolean) => void) => unknown };
+  const windowObject = {} as { registerControl?: (descriptor: ArtifactControl | string, callback: (value: number | boolean) => void) => unknown };
   const documentObject = { createElement: () => makeElement() };
   const camera = { lookAt: () => undefined };
   const THREE = { Vector3: class Vector3 {} };
@@ -338,5 +338,16 @@ setWalkthroughSteps([{ id: "fan", title: "Fan", narration: "Air enters through t
     input.dispatch("input");
     input.dispatch("change");
     expect(values).toEqual([1, 1.5]);
+  });
+
+  it("resolves shorthand playground control ids from declared metadata", () => {
+    const descriptor = { id: "displacement", type: "range" as const, label: "Displacement", min: -2, max: 2, step: 0.1, value: 1 };
+    const { registerControl, playgroundControls } = installControlRuntime([descriptor]);
+
+    const values: Array<number | boolean> = [];
+    registerControl("displacement", (value) => values.push(value));
+
+    expect(values).toEqual([1]);
+    expect(playgroundControls.children[0].dataset.controlId).toBe("displacement");
   });
 });

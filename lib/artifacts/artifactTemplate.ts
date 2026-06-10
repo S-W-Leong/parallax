@@ -413,13 +413,27 @@ export function renderArtifactHtml(input: ArtifactTemplateInput): string {
         return Number(value).toFixed(decimals);
       }
 
-      window.registerControl = function registerControl(descriptor, callback) {
+      function resolveControlDescriptor(descriptorOrId) {
+        if (typeof descriptorOrId !== "string") return descriptorOrId;
+        const id = descriptorOrId.trim();
+        if (!id) {
+          throw new Error("registerControl requires a non-empty string id");
+        }
+        const declared = declaredControls.get(id);
+        if (!declared) {
+          throw new Error('registerControl("' + id + '") was not declared in artifact metadata');
+        }
+        return declared;
+      }
+
+      window.registerControl = function registerControl(descriptorOrId, callback) {
         if (artifactPayload.lessonMode !== "playground") {
           throw new Error("registerControl is only available for playground artifacts");
         }
         if (!playgroundControls) {
           throw new Error("Playground controls container is missing from the runtime");
         }
+        const descriptor = resolveControlDescriptor(descriptorOrId);
         assertControlDescriptor(descriptor);
         assertDeclaredControlMatches(descriptor);
         if (typeof callback !== "function") {

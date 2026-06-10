@@ -135,6 +135,7 @@ function normalizeToolInput(input: z.infer<typeof createExperienceToolInputSchem
 export type CreateExperienceToolSink = {
   tool: Tool;
   getResult: () => CreateArtifactRecordResult | null;
+  clearResult: () => void;
 };
 
 export function makeCreateExperienceToolSink(): CreateExperienceToolSink {
@@ -167,5 +168,8 @@ export function makeCreateExperienceToolSink(): CreateExperienceToolSink {
   return {
     tool: createExperienceTool,
     getResult: () => result,
+    clearResult: () => {
+      result = null;
+    },
   };
 }

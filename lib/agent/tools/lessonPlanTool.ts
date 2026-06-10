@@ -2,6 +2,37 @@ import { tool, type Tool } from "@openai/agents";
 import { z } from "zod";
 import { artifactSourceSchema, lessonModeSchema } from "@/lib/artifacts/artifactTypes";
 
+const mechanismSpecSchema = z.object({
+  topic: z.string().min(1),
+  sourceClaims: z.array(z.object({
+    claim: z.string().min(1),
+    sourceUrl: z.string().min(1).nullable(),
+  })).min(1).max(8),
+  components: z.array(z.object({
+    id: z.string().min(1),
+    label: z.string().min(1),
+    role: z.string().min(1),
+    visualCues: z.array(z.string().min(1)).min(1).max(6),
+    spatialHints: z.array(z.string().min(1)).min(1).max(6),
+  })).min(3).max(10),
+  relationships: z.array(z.object({
+    fromComponentId: z.string().min(1),
+    toComponentId: z.string().min(1),
+    relationship: z.enum(["drives", "contains", "connects_to", "transfers_energy_to", "flows_into", "regulates"]),
+    explanation: z.string().min(1),
+  })).max(12),
+  flows: z.array(z.object({
+    medium: z.string().min(1),
+    pathComponentIds: z.array(z.string().min(1)).min(1).max(10),
+    direction: z.string().min(1),
+    causeEffect: z.string().min(1),
+  })).max(6),
+  learnerInteractions: z.array(z.object({
+    type: z.enum(["focus", "explode", "toggle", "slider", "walkthrough_step"]),
+    purpose: z.string().min(1),
+  })).min(1).max(8),
+});
+
 export const lessonPlanToolInputSchema = z.object({
   artifactNeeded: z.boolean(),
   lessonMode: lessonModeSchema.nullable(),
@@ -12,6 +43,7 @@ export const lessonPlanToolInputSchema = z.object({
   researchUsed: z.boolean(),
   sources: z.array(artifactSourceSchema).max(4),
   requiredComponents: z.array(z.string().min(1)).max(8),
+  mechanismSpec: mechanismSpecSchema.nullable(),
   builderBrief: z.string().min(1).nullable(),
 }).superRefine((value, ctx) => {
   if (value.artifactNeeded) {
@@ -48,6 +80,13 @@ export const lessonPlanToolInputSchema = z.object({
         code: z.ZodIssueCode.custom,
         message: "builderBrief is required when artifactNeeded is true.",
         path: ["builderBrief"],
+      });
+    }
+    if (value.mechanismSpec == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "mechanismSpec is required when artifactNeeded is true.",
+        path: ["mechanismSpec"],
       });
     }
     return;
@@ -102,7 +141,20 @@ export const lessonPlanToolInputSchema = z.object({
       path: ["sources"],
     });
   }
+  if (value.mechanismSpec != null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "mechanismSpec is only allowed when artifactNeeded is true.",
+      path: ["mechanismSpec"],
+    });
+  }
 });
+
+type MechanismSpecToolInput = z.infer<typeof mechanismSpecSchema>;
+
+export type MechanismSpec = Omit<MechanismSpecToolInput, "sourceClaims"> & {
+  sourceClaims: Array<{ claim: string; sourceUrl?: string }>;
+};
 
 export type LessonPlan = {
   artifactNeeded: boolean;
@@ -114,6 +166,7 @@ export type LessonPlan = {
   researchUsed: boolean;
   sources: z.infer<typeof artifactSourceSchema>[];
   requiredComponents: string[];
+  mechanismSpec?: MechanismSpec;
   builderBrief?: string;
 };
 
@@ -130,6 +183,18 @@ function normalizeNullable<T>(value: T | null): T | undefined {
   return value ?? undefined;
 }
 
+function normalizeMechanismSpec(value: MechanismSpecToolInput | null): MechanismSpec | undefined {
+  if (!value) return undefined;
+
+  return {
+    ...value,
+    sourceClaims: value.sourceClaims.map((claim) => ({
+      claim: claim.claim,
+      sourceUrl: claim.sourceUrl ?? undefined,
+    })),
+  };
+}
+
 function normalizeToolInput(input: z.infer<typeof lessonPlanToolInputSchema>): LessonPlan {
   return {
     artifactNeeded: input.artifactNeeded,
@@ -141,6 +206,7 @@ function normalizeToolInput(input: z.infer<typeof lessonPlanToolInputSchema>): L
     researchUsed: input.researchUsed,
     sources: input.sources,
     requiredComponents: input.requiredComponents,
+    mechanismSpec: normalizeMechanismSpec(input.mechanismSpec),
     builderBrief: normalizeNullable(input.builderBrief),
   };
 }

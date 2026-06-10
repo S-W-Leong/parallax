@@ -11,7 +11,8 @@ import {
 } from "@/lib/artifacts/artifactTypes";
 import { getThreadStore } from "@/lib/cloud/threadStore";
 import { encodeAgentStreamEvent, type AgentStreamEvent } from "./streamProtocol";
-import { makeBuilderAgent, makePlannerAgent, makeTutorAgent } from "./agents";
+import { makeBuilderAgent, makeCriticAgent, makePlannerAgent, makeTutorAgent } from "./agents";
+import { makeArtifactCritiqueToolSink, type ArtifactCritique } from "./tools/artifactCritiqueTool";
 import { makeCreateExperienceToolSink } from "./tools/createExperienceTool";
 import { makeLessonPlanToolSink, type LessonPlan } from "./tools/lessonPlanTool";
 import { makeResearchStemTopicTool } from "./tools/researchStemTopicTool";
@@ -192,8 +193,11 @@ ${history ? `Recent conversation:\n${history}\n\n` : ""}${artifactContext ? `${a
   return { userMessage, lessonPlan, createExperience, plannerAgent, builderAgent, plannerPrompt };
 }
 
-function makeBuilderPrompt(plan: LessonPlan, requestMessage: string): string {
-  return `Lesson plan:\n${JSON.stringify(plan)}\n\nOriginal user request:\n${requestMessage}`;
+function makeBuilderPrompt(plan: LessonPlan, requestMessage: string, critique?: ArtifactCritique): string {
+  const criticFeedback = critique
+    ? `\n\nCritic feedback from previous attempt:\n${JSON.stringify(critique, null, 2)}`
+    : "";
+  return `Lesson plan:\n${JSON.stringify(plan)}\n\nOriginal user request:\n${requestMessage}${criticFeedback}`;
 }
 
 function makeChatArtifactTrace(plan: LessonPlan): string[] {
@@ -204,6 +208,59 @@ function makeChatArtifactTrace(plan: LessonPlan): string[] {
     "Generating interactive 3D artifact",
     "Validating artifact contract",
   ];
+}
+
+function makeCriticPrompt(plan: LessonPlan, artifact: ArtifactRecord, requestMessage: string): string {
+  const artifactForReview = {
+    id: artifact.id,
+    title: artifact.title,
+    topic: artifact.topic,
+    summary: artifact.summary,
+    lessonMode: artifact.lessonMode,
+    interactionGoal: artifact.interactionGoal,
+    sources: artifact.sources ?? [],
+    controls: artifact.controls ?? [],
+    components: artifact.components,
+    walkthroughSteps: artifact.walkthroughSteps,
+    sceneSource: artifact.sceneSource,
+  };
+
+  return `Lesson plan:\n${JSON.stringify(plan, null, 2)}\n\nOriginal user request:\n${requestMessage}\n\nArtifact to review:\n${JSON.stringify(artifactForReview, null, 2)}`;
+}
+
+async function critiqueArtifact(plan: LessonPlan, artifact: ArtifactRecord, requestMessage: string) {
+  const critiqueSink = makeArtifactCritiqueToolSink();
+  const criticAgent = makeCriticAgent([critiqueSink.tool]);
+  await run(criticAgent, makeCriticPrompt(plan, artifact, requestMessage), { maxTurns: 4 });
+
+  const critique = critiqueSink.getResult();
+  if (!critique) {
+    return {
+      ok: false as const,
+      error: "The artifact critic did not call critique_artifact.",
+    };
+  }
+
+  return {
+    ok: true as const,
+    critique,
+  };
+}
+
+function critiqueIssueSummary(critique: ArtifactCritique): string {
+  return [
+    ...critique.factualIssues,
+    ...critique.visualIssues,
+    ...critique.interactionIssues,
+    ...critique.missingComponents.map((component) => `Missing component: ${component}`),
+  ].join(" ");
+}
+
+function blockedArtifactMessage(title: string, critique: ArtifactCritique): string {
+  const issueSummary = critiqueIssueSummary(critique);
+  const repair = critique.repairInstructions ? `Repair guidance: ${critique.repairInstructions}` : "";
+  const detail = [issueSummary, repair].filter(Boolean).join(" ");
+  return `I couldn't generate a reliable artifact for "${title}" yet.${detail ? ` ${detail}` : ""}`;
 }
 
 async function finishDirectPlannerAnswer(
@@ -253,6 +310,8 @@ async function finishChatMode(
   result: { finalOutput?: unknown },
   createExperience: ReturnType<typeof makeCreateExperienceToolSink>,
   plan?: LessonPlan,
+  builderAgent?: ReturnType<typeof makeBuilderAgent>,
+  requestMessage?: string,
 ) {
   const artifactResult = createExperience.getResult();
   const trace = plan ? makeChatArtifactTrace(plan) : [];
@@ -273,13 +332,58 @@ async function finishChatMode(
     return finishArtifactBuildFailure(request, userMessage, artifactResult.error, trace);
   }
 
-  const messageText = finalOutputText(result.finalOutput, `I built ${artifactResult.artifact.title}.`);
-  const assistantMessage = makeMessage("assistant", messageText, artifactResult.artifact.id);
-  await persistIfThreaded(request.userId, request.threadId, [userMessage, assistantMessage], artifactResult.artifact);
+  let acceptedArtifact = artifactResult.artifact;
+  let acceptedResult = result;
+
+  if (plan && builderAgent && requestMessage) {
+    trace.push("Reviewing artifact accuracy");
+    const critique = await critiqueArtifact(plan, acceptedArtifact, requestMessage);
+    if (!critique.ok) {
+      return finishArtifactBuildFailure(request, userMessage, critique.error, trace);
+    }
+
+    if (!critique.critique.approved) {
+      trace.push("Repairing artifact from critic feedback");
+      createExperience.clearResult();
+      const retryResult = await run(builderAgent, makeBuilderPrompt(plan, requestMessage, critique.critique), { maxTurns: 8 });
+      const retryArtifactResult = createExperience.getResult();
+
+      if (!retryArtifactResult) {
+        return finishArtifactBuildFailure(
+          request,
+          userMessage,
+          missingCreateExperienceErrorMessage(plan),
+          trace,
+        );
+      }
+
+      if (!retryArtifactResult.ok) {
+        return finishArtifactBuildFailure(request, userMessage, retryArtifactResult.error, trace);
+      }
+
+      trace.push("Re-reviewing artifact accuracy");
+      const retryCritique = await critiqueArtifact(plan, retryArtifactResult.artifact, requestMessage);
+      if (!retryCritique.ok) {
+        return finishArtifactBuildFailure(request, userMessage, retryCritique.error, trace);
+      }
+
+      if (!retryCritique.critique.approved) {
+        const message = blockedArtifactMessage(retryArtifactResult.artifact.title, retryCritique.critique);
+        return finishArtifactBuildFailure(request, userMessage, message, trace);
+      }
+
+      acceptedArtifact = retryArtifactResult.artifact;
+      acceptedResult = retryResult;
+    }
+  }
+
+  const messageText = finalOutputText(acceptedResult.finalOutput, `I built ${acceptedArtifact.title}.`);
+  const assistantMessage = makeMessage("assistant", messageText, acceptedArtifact.id);
+  await persistIfThreaded(request.userId, request.threadId, [userMessage, assistantMessage], acceptedArtifact);
   return {
     message: messageText,
     trace,
-    artifact: artifactResult.artifact,
+    artifact: acceptedArtifact,
     error: null,
   };
 }
@@ -294,7 +398,15 @@ async function handleChatMode(request: z.infer<typeof chatAgentRequestSchema>) {
   }
 
   const builderResult = await run(prepared.builderAgent, makeBuilderPrompt(planned.plan, request.message), { maxTurns: 8 });
-  return finishChatMode(request, prepared.userMessage, builderResult, prepared.createExperience, planned.plan);
+  return finishChatMode(
+    request,
+    prepared.userMessage,
+    builderResult,
+    prepared.createExperience,
+    planned.plan,
+    prepared.builderAgent,
+    request.message,
+  );
 }
 
 function prepareLearningRoomMode(request: z.infer<typeof learningRoomAgentRequestSchema>) {
@@ -597,7 +709,15 @@ async function runChatModeStream(
   });
   await emitRunStreamEvents(result, emit);
   await waitForStreamCompletion(result);
-  return finishChatMode(request, prepared.userMessage, result, prepared.createExperience, planned.plan);
+  return finishChatMode(
+    request,
+    prepared.userMessage,
+    result,
+    prepared.createExperience,
+    planned.plan,
+    prepared.builderAgent,
+    request.message,
+  );
 }
 
 async function runLearningRoomModeStream(
