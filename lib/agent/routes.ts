@@ -193,11 +193,18 @@ ${history ? `Recent conversation:\n${history}\n\n` : ""}${artifactContext ? `${a
   return { userMessage, lessonPlan, createExperience, plannerAgent, builderAgent, plannerPrompt };
 }
 
-function makeBuilderPrompt(plan: LessonPlan, requestMessage: string, critique?: ArtifactCritique): string {
-  const criticFeedback = critique
-    ? `\n\nCritic feedback from previous attempt:\n${JSON.stringify(critique, null, 2)}`
+function makeBuilderPrompt(
+  plan: LessonPlan,
+  requestMessage: string,
+  feedback?: { critic?: ArtifactCritique; validatorError?: string },
+): string {
+  const criticFeedback = feedback?.critic
+    ? `\n\nCritic feedback from previous attempt:\n${JSON.stringify(feedback.critic, null, 2)}`
     : "";
-  return `Lesson plan:\n${JSON.stringify(plan)}\n\nOriginal user request:\n${requestMessage}${criticFeedback}`;
+  const validatorFeedback = feedback?.validatorError
+    ? `\n\nValidator feedback from previous attempt:\n${feedback.validatorError}\nRepair the artifact and call create_experience exactly once. Match the selected lessonMode rules exactly.`
+    : "";
+  return `Lesson plan:\n${JSON.stringify(plan)}\n\nOriginal user request:\n${requestMessage}${criticFeedback}${validatorFeedback}`;
 }
 
 function makeChatArtifactTrace(plan: LessonPlan): string[] {
@@ -313,8 +320,22 @@ async function finishChatMode(
   builderAgent?: ReturnType<typeof makeBuilderAgent>,
   requestMessage?: string,
 ) {
-  const artifactResult = createExperience.getResult();
+  let artifactResult = createExperience.getResult();
   const trace = plan ? makeChatArtifactTrace(plan) : [];
+
+  if ((!artifactResult || !artifactResult.ok) && plan?.artifactNeeded && builderAgent && requestMessage) {
+    const validationError = artifactResult?.ok === false
+      ? artifactResult.error
+      : missingCreateExperienceErrorMessage(plan);
+    trace.push("Repairing artifact from validator feedback");
+    createExperience.clearResult();
+    result = await run(
+      builderAgent,
+      makeBuilderPrompt(plan, requestMessage, { validatorError: validationError }),
+      { maxTurns: 8 },
+    );
+    artifactResult = createExperience.getResult();
+  }
 
   if (!artifactResult) {
     if (plan?.artifactNeeded) {
@@ -345,7 +366,7 @@ async function finishChatMode(
     if (!critique.critique.approved) {
       trace.push("Repairing artifact from critic feedback");
       createExperience.clearResult();
-      const retryResult = await run(builderAgent, makeBuilderPrompt(plan, requestMessage, critique.critique), { maxTurns: 8 });
+      const retryResult = await run(builderAgent, makeBuilderPrompt(plan, requestMessage, { critic: critique.critique }), { maxTurns: 8 });
       const retryArtifactResult = createExperience.getResult();
 
       if (!retryArtifactResult) {

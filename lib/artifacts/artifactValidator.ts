@@ -18,6 +18,13 @@ const forbiddenNetworkPatterns = [
   /\bnavigator\.sendBeacon\b/i,
   /\bimport\s*\(/i,
 ];
+const forbiddenGeneratedLabelPatterns = [
+  /\bfillText\s*\(/i,
+  /\bstrokeText\s*\(/i,
+  /\bmeasureText\s*\(/i,
+  /\bTextGeometry\b/i,
+  /\bFontLoader\b/i,
+];
 
 function stripLineAndBlockComments(source: string): string {
   return source
@@ -91,6 +98,13 @@ export function validateSceneSource(source: string): ArtifactValidationResult {
 
   if (forbiddenNetworkPatterns.some((pattern) => pattern.test(source))) {
     return { ok: false, error: "Generated scene source contains a forbidden network or dynamic import API." };
+  }
+
+  if (forbiddenGeneratedLabelPatterns.some((pattern) => pattern.test(source))) {
+    return {
+      ok: false,
+      error: "Generated scene source must not create its own text labels; use registerComponent labels and the runtime labels toggle instead.",
+    };
   }
 
   if (!/registerComponent\s*\(/.test(source)) {

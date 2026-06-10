@@ -26,6 +26,27 @@ describe("artifact validation", () => {
     expect(result.error).toContain("network");
   });
 
+  it("rejects generated canvas text labels because runtime labels own label visibility", () => {
+    const result = validateSceneSource(`
+const canvas = document.createElement("canvas");
+const context = canvas.getContext("2d");
+context.fillText("Glycolysis", 12, 24);
+const texture = new THREE.CanvasTexture(canvas);
+const labelPlane = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.5), new THREE.MeshBasicMaterial({ map: texture }));
+const glucose = new THREE.Group();
+const oxygen = new THREE.Group();
+const mitochondrion = new THREE.Group();
+root.add(labelPlane, glucose, oxygen, mitochondrion);
+registerComponent("glucose", "Glucose", glucose, {});
+registerComponent("oxygen", "Oxygen", oxygen, {});
+registerComponent("mitochondrion", "Mitochondrion", mitochondrion, {});
+setWalkthroughSteps([{ id: "intro", title: "Inputs", narration: "Start with glucose and oxygen.", targetComponentIds: ["glucose"] }]);
+`);
+
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).toContain("runtime labels");
+  });
+
   it("rejects JavaScript syntax errors before creating an artifact", () => {
     const invalidSceneSource = `
 const 3DModel = new THREE.Group();

@@ -40,6 +40,7 @@ sceneSource contract:
 - Generate JavaScript only, with no markdown fences or prose.
 - Create visible 3D objects under root.
 - Call registerComponent(id, label, object3D, metadata) for at least three meaningful clickable components.
+- Do not create your own text labels, text panels, equation billboards, DOM labels, or canvas text in the 3D scene. The Parallax runtime owns component labels from registerComponent, and the user's Labels button must be able to hide every visible label. Put explanatory text in walkthrough narration, summaries, metadata, or status messages instead.
 - The current runtime supports registerControl(...) for playground lessons. Use it when the lesson plan calls for learner-manipulable controls such as range sliders or toggles.
 - In create_experience controls metadata, use this flat shape: range controls set type "range", min, max, step, value, and enabled null; toggle controls set type "toggle", enabled true/false, and min, max, step, value null. In sceneSource registerControl descriptors still use the runtime value field.
 - The current runtime also supports setWalkthroughSteps(steps). For guided_walkthrough lessons, provide 4 to 6 concise steps. For playground lessons, always call setWalkthroughSteps([]); playground artifacts must not include walkthrough steps.
@@ -47,9 +48,10 @@ sceneSource contract:
 - You may define window.setExploded, window.resetCamera, window.startWalkthrough, or window.pauseWalkthrough when custom behavior helps.
 - Use only deterministic local geometry, materials, canvas textures, math, and animation.
 - Do not use fetch, XMLHttpRequest, WebSocket, EventSource, dynamic import, script tags, iframe, localStorage, cookies, or remote assets.
+- Do not use fillText, strokeText, measureText, TextGeometry, FontLoader, or any generated text texture for labels or equations.
 - Use valid JavaScript identifiers only. Never name variables, functions, or object properties with identifiers that start with a number, such as 3DModel. Prefer names like model3D or reactorModel.
 
-Make artifacts complete in one shot. Prefer clear component relationships, labels, responsive controls, walkthrough pacing, and camera targets over visual excess.
+Make artifacts complete in one shot. Prefer clear component relationships, runtime-owned labels, responsive controls, walkthrough pacing, and camera targets over visual excess.
 
 After create_experience succeeds, respond with a concise proposal summary that tells the user what they can explore and invites them to enter the experience. If validation fails, show the raw validation error.
 `;

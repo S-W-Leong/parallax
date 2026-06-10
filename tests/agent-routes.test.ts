@@ -488,6 +488,96 @@ describe("agent routes", () => {
     });
   });
 
+  it("retries once when static artifact validation rejects the first build", async () => {
+    lessonPlanState.result = {
+      ok: true,
+      plan: {
+        artifactNeeded: true,
+        lessonMode: "guided_walkthrough",
+        title: "Aerobic Respiration: From Glucose to ATP",
+        topic: "aerobic respiration",
+        rationale: "A guided walkthrough fits the sequence of respiration stages.",
+        interactionGoal: "Follow glucose breakdown through ATP production.",
+        researchUsed: false,
+        sources: [],
+        requiredComponents: ["glucose", "oxygen", "mitochondrion"],
+        mechanismSpec,
+        builderBrief: "Build a guided respiration walkthrough with no playground controls.",
+      },
+    };
+    createExperienceState.results = [
+      { ok: false, error: "Guided walkthrough artifacts must not declare controls." },
+      { ok: true, artifact: replacementArtifact },
+    ];
+    mockedRun
+      .mockResolvedValueOnce({ finalOutput: "Plan ready." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "I built the first respiration room." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "I repaired the respiration room." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "The repaired room is accurate enough to show." } as Awaited<ReturnType<typeof run>>);
+
+    const response = await handleAgentRoute({
+      mode: "chat",
+      message: "Give me an interactive experience to learn this concept",
+      messages: [],
+    });
+
+    expect(mockedRun).toHaveBeenCalledTimes(4);
+    expect(createExperienceState.clearCount).toBe(1);
+    expect(mockedRun.mock.calls[2]?.[1]).toContain("Validator feedback from previous attempt");
+    expect(mockedRun.mock.calls[2]?.[1]).toContain("Guided walkthrough artifacts must not declare controls.");
+    expect(response).toMatchObject({
+      message: "I repaired the respiration room.",
+      artifact: { id: replacementArtifact.id },
+      error: null,
+    });
+    expect(response.trace).toEqual(expect.arrayContaining([
+      "Repairing artifact from validator feedback",
+      "Reviewing artifact accuracy",
+    ]));
+  });
+
+  it("retries once when the builder skips create_experience", async () => {
+    lessonPlanState.result = {
+      ok: true,
+      plan: {
+        artifactNeeded: true,
+        lessonMode: "guided_walkthrough",
+        title: "Aerobic Respiration: From Glucose to ATP",
+        topic: "aerobic respiration",
+        rationale: "A guided walkthrough fits the sequence of respiration stages.",
+        interactionGoal: "Follow glucose breakdown through ATP production.",
+        researchUsed: false,
+        sources: [],
+        requiredComponents: ["glucose", "oxygen", "mitochondrion"],
+        mechanismSpec,
+        builderBrief: "Build a guided respiration walkthrough.",
+      },
+    };
+    createExperienceState.results = [
+      null,
+      { ok: true, artifact: replacementArtifact },
+    ];
+    mockedRun
+      .mockResolvedValueOnce({ finalOutput: "Plan ready." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "I forgot to call the tool." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "I built it with the tool this time." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "The artifact is accurate enough to show." } as Awaited<ReturnType<typeof run>>);
+
+    const response = await handleAgentRoute({
+      mode: "chat",
+      message: "Give me an interactive experience to learn this concept",
+      messages: [],
+    });
+
+    expect(mockedRun).toHaveBeenCalledTimes(4);
+    expect(mockedRun.mock.calls[2]?.[1]).toContain("The builder did not call create_experience");
+    expect(response).toMatchObject({
+      message: "I built it with the tool this time.",
+      artifact: { id: replacementArtifact.id },
+      error: null,
+    });
+  });
+
   it("answers learning-room questions through the same route contract", async () => {
     mockedRun.mockResolvedValueOnce({ finalOutput: "The nucleus stores the genetic instructions." } as Awaited<ReturnType<typeof run>>);
 
@@ -670,13 +760,20 @@ describe("agent routes", () => {
         builderBrief: "Build a guided cell room.",
       },
     };
-    createExperienceState.result = {
-      ok: false,
-      error: "Artifact validation failed: missing registerComponent call.",
-    };
+    createExperienceState.results = [
+      {
+        ok: false,
+        error: "Artifact validation failed: missing registerComponent call.",
+      },
+      {
+        ok: false,
+        error: "Artifact validation failed: missing registerComponent call.",
+      },
+    ];
     mockedRun
       .mockResolvedValueOnce({ finalOutput: "Plan ready." } as Awaited<ReturnType<typeof run>>)
-      .mockResolvedValueOnce({ finalOutput: "Builder attempted the artifact." } as Awaited<ReturnType<typeof run>>);
+      .mockResolvedValueOnce({ finalOutput: "Builder attempted the artifact." } as Awaited<ReturnType<typeof run>>)
+      .mockResolvedValueOnce({ finalOutput: "Builder attempted a repair." } as Awaited<ReturnType<typeof run>>);
 
     const response = await handleAgentRoute({
       mode: "chat",
@@ -691,6 +788,7 @@ describe("agent routes", () => {
       trace: expect.arrayContaining([
         expect.stringContaining("lesson mode"),
         expect.stringContaining("artifact"),
+        "Repairing artifact from validator feedback",
       ]),
       artifact: null,
       error: "Artifact validation failed: missing registerComponent call.",
