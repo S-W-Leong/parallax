@@ -1,0 +1,171 @@
+<style>
+  .variant-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 22px;
+  }
+  .variant {
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 14px;
+    background: #0f172a;
+    padding: 18px;
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+  }
+  .variant:hover {
+    transform: translateY(-2px);
+    border-color: rgba(125, 211, 252, 0.55);
+    background: #111827;
+  }
+  .stage {
+    min-height: 244px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(135deg, #020617, #111827 58%, #0f172a);
+  }
+  .variant h3 {
+    color: #f8fafc;
+    margin: 14px 0 5px;
+  }
+  .variant p {
+    color: #cbd5e1;
+    line-height: 1.45;
+    margin: 0;
+  }
+  .lockup {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    color: #f8fafc;
+    font-size: 22px;
+    font-weight: 760;
+  }
+  .mini {
+    width: 30px;
+    height: 30px;
+    flex: none;
+  }
+  .favicon-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .favicon {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: #020617;
+    border: 1px solid rgba(255,255,255,.12);
+  }
+  .small-label {
+    color: #94a3b8;
+    font-size: 13px;
+  }
+  @media (max-width: 980px) {
+    .variant-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<h2>Layered Lens Room: Three Refinements</h2>
+<p class="subtitle">Same core idea, different personality. Pick the one that feels most like Parallax before we polish the final mark.</p>
+
+<div class="variant-grid">
+  <div class="variant" data-choice="crystal" onclick="toggleSelect(this)">
+    <div class="stage">
+      <svg width="208" height="176" viewBox="0 0 208 176" role="img" aria-label="Crystal lens variant">
+        <defs>
+          <linearGradient id="crystalStroke" x1="38" y1="22" x2="170" y2="150">
+            <stop offset="0" stop-color="#67e8f9"/>
+            <stop offset=".48" stop-color="#f8fafc"/>
+            <stop offset="1" stop-color="#bef264"/>
+          </linearGradient>
+          <filter id="softGlow" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <path d="M40 44 L104 18 L168 44 L168 128 L104 154 L40 128 Z" fill="rgba(103,232,249,.03)" stroke="url(#crystalStroke)" stroke-width="7" stroke-linejoin="round" filter="url(#softGlow)"/>
+        <path d="M65 60 L104 44 L143 60 L143 112 L104 128 L65 112 Z" fill="rgba(248,250,252,.04)" stroke="#e2e8f0" stroke-width="4" stroke-linejoin="round"/>
+        <path d="M40 44 L104 86 L168 44 M40 128 L104 86 L168 128 M104 18 L104 154" stroke="#38bdf8" stroke-width="3" opacity=".72" fill="none"/>
+        <circle cx="104" cy="86" r="8" fill="#f8fafc"/>
+      </svg>
+    </div>
+    <h3>Crystal</h3>
+    <p>Precise, premium, and STEM-forward. This is the cleanest icon and probably the safest long-term product mark.</p>
+    <div class="lockup">
+      <svg class="mini" viewBox="0 0 40 40"><path d="M7 10 L20 5 L33 10 L33 30 L20 35 L7 30 Z" fill="none" stroke="#67e8f9" stroke-width="3"/><path d="M7 10 L20 21 L33 10 M20 5 V35 M7 30 L20 21 L33 30" fill="none" stroke="#bef264" stroke-width="2"/></svg>
+      Parallax
+    </div>
+    <div class="favicon-row">
+      <div class="favicon"><svg width="22" height="22" viewBox="0 0 40 40"><path d="M7 10 L20 5 L33 10 L33 30 L20 35 L7 30 Z" fill="none" stroke="#67e8f9" stroke-width="4"/><path d="M7 10 L20 21 L33 10 M20 5 V35" fill="none" stroke="#bef264" stroke-width="2.5"/></svg></div>
+      <span class="small-label">Holds up best at tiny sizes.</span>
+    </div>
+  </div>
+
+  <div class="variant" data-choice="warm-room" onclick="toggleSelect(this)">
+    <div class="stage">
+      <svg width="208" height="176" viewBox="0 0 208 176" role="img" aria-label="Warm room variant">
+        <defs>
+          <linearGradient id="warmStroke" x1="42" y1="24" x2="168" y2="146">
+            <stop offset="0" stop-color="#f97316"/>
+            <stop offset=".45" stop-color="#facc15"/>
+            <stop offset="1" stop-color="#22c55e"/>
+          </linearGradient>
+        </defs>
+        <path d="M42 48 Q42 38 52 34 L104 14 L156 34 Q166 38 166 48 L166 124 Q166 134 156 138 L104 158 L52 138 Q42 134 42 124 Z" fill="rgba(250,204,21,.05)" stroke="url(#warmStroke)" stroke-width="8" stroke-linejoin="round"/>
+        <path d="M69 64 L104 50 L139 64 L139 108 L104 122 L69 108 Z" fill="#020617" stroke="#f8fafc" stroke-width="4" stroke-linejoin="round"/>
+        <path d="M69 64 L104 86 L139 64 M69 108 L104 86 L139 108 M104 50 V122" stroke="#fbbf24" stroke-width="3" fill="none"/>
+        <path d="M96 85 H112 M104 77 V93" stroke="#86efac" stroke-width="4" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <h3>Warm Room</h3>
+    <p>Less crystalline, more welcoming. It suggests “enter this space” instead of just “inspect this object.”</p>
+    <div class="lockup">
+      <svg class="mini" viewBox="0 0 40 40"><path d="M8 11 Q8 8 11 7 L20 4 L29 7 Q32 8 32 11 V29 Q32 32 29 33 L20 36 L11 33 Q8 32 8 29 Z" fill="none" stroke="#f97316" stroke-width="3"/><path d="M12 13 L20 20 L28 13 M20 4 V36" fill="none" stroke="#22c55e" stroke-width="2"/></svg>
+      Parallax
+    </div>
+    <div class="favicon-row">
+      <div class="favicon"><svg width="22" height="22" viewBox="0 0 40 40"><path d="M8 11 Q8 8 11 7 L20 4 L29 7 Q32 8 32 11 V29 Q32 32 29 33 L20 36 L11 33 Q8 32 8 29 Z" fill="none" stroke="#f97316" stroke-width="4"/><path d="M12 13 L20 20 L28 13" fill="none" stroke="#22c55e" stroke-width="3"/></svg></div>
+      <span class="small-label">Friendliest for learners.</span>
+    </div>
+  </div>
+
+  <div class="variant" data-choice="agent-room" onclick="toggleSelect(this)">
+    <div class="stage">
+      <svg width="208" height="176" viewBox="0 0 208 176" role="img" aria-label="Agent room variant">
+        <defs>
+          <linearGradient id="agentStroke" x1="38" y1="30" x2="170" y2="148">
+            <stop offset="0" stop-color="#38bdf8"/>
+            <stop offset=".6" stop-color="#a78bfa"/>
+            <stop offset="1" stop-color="#fb7185"/>
+          </linearGradient>
+        </defs>
+        <path d="M42 46 L104 18 L166 46 L166 126 L104 154 L42 126 Z" fill="rgba(167,139,250,.05)" stroke="url(#agentStroke)" stroke-width="7" stroke-linejoin="round"/>
+        <path d="M64 62 L104 44 L144 62 L144 112 L104 130 L64 112 Z" fill="#020617" stroke="#f8fafc" stroke-width="4" stroke-linejoin="round"/>
+        <path d="M42 46 L104 86 L166 46 M42 126 L104 86 L166 126 M104 44 V130" stroke="#94a3b8" stroke-width="3" fill="none"/>
+        <circle cx="104" cy="86" r="7" fill="#f8fafc"/>
+        <circle cx="71" cy="61" r="6" fill="#38bdf8"/>
+        <circle cx="145" cy="61" r="6" fill="#a78bfa"/>
+        <circle cx="104" cy="130" r="6" fill="#fb7185"/>
+        <path d="M71 61 C86 44 123 44 145 61 M71 61 C80 101 101 119 104 130 M145 61 C135 101 111 119 104 130" stroke="#c4b5fd" stroke-width="2.4" fill="none" opacity=".8"/>
+      </svg>
+    </div>
+    <h3>Agent Room</h3>
+    <p>Adds nodes for components and AI control. More distinctive, but busier when reduced to a small app icon.</p>
+    <div class="lockup">
+      <svg class="mini" viewBox="0 0 40 40"><path d="M8 10 L20 5 L32 10 L32 30 L20 35 L8 30 Z" fill="none" stroke="#38bdf8" stroke-width="3"/><circle cx="13" cy="12" r="2.8" fill="#38bdf8"/><circle cx="27" cy="12" r="2.8" fill="#a78bfa"/><circle cx="20" cy="32" r="2.8" fill="#fb7185"/></svg>
+      Parallax
+    </div>
+    <div class="favicon-row">
+      <div class="favicon"><svg width="22" height="22" viewBox="0 0 40 40"><path d="M8 10 L20 5 L32 10 L32 30 L20 35 L8 30 Z" fill="none" stroke="#38bdf8" stroke-width="4"/><circle cx="20" cy="20" r="3" fill="#f8fafc"/></svg></div>
+      <span class="small-label">Most “agentic,” least quiet.</span>
+    </div>
+  </div>
+</div>

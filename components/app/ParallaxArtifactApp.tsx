@@ -213,16 +213,6 @@ export function ParallaxArtifactApp() {
     dispatch({ type: "component_selected", component });
   }
 
-  function goToWalkthroughOffset(offset: number) {
-    if (!activeArtifact || !state.activeStepId) return;
-    const currentIndex = activeArtifact.walkthroughSteps.findIndex((step) => step.id === state.activeStepId);
-    if (currentIndex === -1) return;
-    const target = activeArtifact.walkthroughSteps[currentIndex + offset];
-    if (!target) return;
-    dispatch({ type: "step_changed", stepId: target.id, title: target.title });
-    dispatch({ type: "enqueue_commands", commands: [{ type: "go_to_step", stepId: target.id }] });
-  }
-
   function resetSession() {
     if (pendingRequestRef.current) return;
     void createThread();
@@ -280,15 +270,12 @@ export function ParallaxArtifactApp() {
           trace={state.trace}
           pendingCommands={state.pendingCommands}
           selectedComponent={state.selectedComponent}
-          activeStepId={state.activeStepId}
           busy={busy}
           onStop={stopResponse}
           onStopResponse={stopResponse}
           onExit={() => dispatch({ type: "exit_experience" })}
           onResetSession={resetSession}
           onLearningRoomMessage={sendLearningRoomMessage}
-          onPreviousStep={() => goToWalkthroughOffset(-1)}
-          onNextStep={() => goToWalkthroughOffset(1)}
           onCommandsFlushed={() => dispatch({ type: "clear_pending_commands" })}
           onComponentSelected={selectComponent}
           onStepChanged={(stepId, title) => dispatch({ type: "step_changed", stepId, title })}

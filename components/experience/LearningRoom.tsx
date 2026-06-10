@@ -6,7 +6,6 @@ import type { ArtifactCommand } from "@/lib/artifacts/messageBridge";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatThread } from "@/components/chat/ChatThread";
 import { ArtifactFrame } from "./ArtifactFrame";
-import { WalkthroughStrip } from "./WalkthroughStrip";
 
 type LearningRoomProps = {
   artifact: ArtifactRecord;
@@ -15,15 +14,12 @@ type LearningRoomProps = {
   trace: string[];
   pendingCommands: ArtifactCommand[];
   selectedComponent: SelectedComponent | null;
-  activeStepId: string | null;
   busy: boolean;
   onStop?: () => void;
   onStopResponse: () => void;
   onExit: () => void;
   onResetSession: () => void;
   onLearningRoomMessage: (message: string) => void;
-  onPreviousStep: () => void;
-  onNextStep: () => void;
   onCommandsFlushed: () => void;
   onComponentSelected: (component: SelectedComponent) => void;
   onStepChanged: (stepId: string, title: string) => void;
@@ -38,15 +34,12 @@ export function LearningRoom({
   trace,
   pendingCommands,
   selectedComponent,
-  activeStepId,
   busy,
   onStop,
   onStopResponse,
   onExit,
   onResetSession,
   onLearningRoomMessage,
-  onPreviousStep,
-  onNextStep,
   onCommandsFlushed,
   onComponentSelected,
   onStepChanged,
@@ -79,7 +72,6 @@ export function LearningRoom({
             onArtifactError={onArtifactError}
           />
         </div>
-        <WalkthroughStrip steps={artifact.walkthroughSteps} activeStepId={activeStepId} onPrevious={onPreviousStep} onNext={onNextStep} />
       </section>
 
       <aside className="room-chat">

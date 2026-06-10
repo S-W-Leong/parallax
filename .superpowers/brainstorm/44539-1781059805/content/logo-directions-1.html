@@ -1,0 +1,178 @@
+<style>
+  .logo-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 22px;
+  }
+  .logo-card {
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 14px;
+    background: #0f172a;
+    padding: 18px;
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+  }
+  .logo-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(125, 211, 252, 0.55);
+    background: #111827;
+  }
+  .logo-stage {
+    min-height: 238px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background:
+      linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(31, 41, 55, 0.9)),
+      radial-gradient(circle at 30% 20%, rgba(45, 212, 191, 0.18), transparent 35%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .logo-card h3 {
+    margin: 14px 0 5px;
+    color: #f8fafc;
+  }
+  .logo-card p {
+    margin: 0;
+    color: #cbd5e1;
+    line-height: 1.45;
+  }
+  .logo-wordmark {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #f8fafc;
+    font-size: 22px;
+    font-weight: 760;
+  }
+  .tiny-mark {
+    width: 28px;
+    height: 28px;
+  }
+  .logo-note {
+    color: #94a3b8;
+    margin-top: 8px;
+    font-size: 13px;
+  }
+  @media (max-width: 860px) {
+    .logo-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<h2>Logo Directions For Parallax</h2>
+<p class="subtitle">No lonely letterform. These marks aim for depth, agency, 3D learning, and an artifact you can enter.</p>
+
+<div class="logo-grid">
+  <div class="logo-card" data-choice="lens-room" onclick="toggleSelect(this)">
+    <div class="logo-stage">
+      <svg width="210" height="170" viewBox="0 0 210 170" role="img" aria-label="Layered lens room logo concept">
+        <defs>
+          <linearGradient id="lensA" x1="40" y1="24" x2="166" y2="144">
+            <stop offset="0" stop-color="#67e8f9"/>
+            <stop offset="0.52" stop-color="#a7f3d0"/>
+            <stop offset="1" stop-color="#fbbf24"/>
+          </linearGradient>
+          <filter id="glowA" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="3.5" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <path d="M42 43 L104 18 L168 43 L168 126 L104 152 L42 126 Z" fill="none" stroke="url(#lensA)" stroke-width="8" stroke-linejoin="round" filter="url(#glowA)"/>
+        <path d="M64 58 L104 42 L146 58 L146 111 L104 128 L64 111 Z" fill="rgba(103,232,249,.08)" stroke="#e2e8f0" stroke-width="4" stroke-linejoin="round"/>
+        <path d="M42 43 L104 84 L168 43 M104 84 L104 152 M42 126 L104 84 L168 126" fill="none" stroke="#38bdf8" stroke-width="3" opacity=".65"/>
+        <circle cx="104" cy="84" r="9" fill="#f8fafc"/>
+      </svg>
+    </div>
+    <h3>Layered Lens Room</h3>
+    <p>A hexagonal learning room seen through stacked perspective planes. Feels spatial, technical, and ownable.</p>
+    <div class="logo-wordmark">
+      <svg class="tiny-mark" viewBox="0 0 40 40"><path d="M8 10 L20 5 L32 10 L32 30 L20 35 L8 30 Z" fill="none" stroke="#67e8f9" stroke-width="3"/><path d="M8 10 L20 20 L32 10 M20 20 L20 35" fill="none" stroke="#fbbf24" stroke-width="2"/></svg>
+      Parallax
+    </div>
+    <div class="logo-note">Best for: product icon, app shell, favicon.</div>
+  </div>
+
+  <div class="logo-card" data-choice="portal-cutaway" onclick="toggleSelect(this)">
+    <div class="logo-stage">
+      <svg width="210" height="170" viewBox="0 0 210 170" role="img" aria-label="Portal cutaway logo concept">
+        <defs>
+          <linearGradient id="portalA" x1="50" y1="24" x2="164" y2="138">
+            <stop offset="0" stop-color="#f97316"/>
+            <stop offset=".5" stop-color="#22c55e"/>
+            <stop offset="1" stop-color="#38bdf8"/>
+          </linearGradient>
+        </defs>
+        <rect x="48" y="28" width="114" height="114" rx="24" fill="none" stroke="url(#portalA)" stroke-width="9"/>
+        <path d="M78 55 H132 V109 H78 Z" fill="#020617" stroke="#e5e7eb" stroke-width="4"/>
+        <path d="M78 55 L105 38 L159 38 L132 55 Z" fill="rgba(251,146,60,.24)" stroke="#fb923c" stroke-width="3"/>
+        <path d="M132 55 L159 38 L159 92 L132 109 Z" fill="rgba(56,189,248,.22)" stroke="#38bdf8" stroke-width="3"/>
+        <circle cx="105" cy="82" r="16" fill="none" stroke="#86efac" stroke-width="5"/>
+        <path d="M96 82 H114 M105 73 V91" stroke="#f8fafc" stroke-width="4" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <h3>Portal Cutaway</h3>
+    <p>A doorway into a sliced-open model. More magical and inviting, while still tied to STEM artifacts.</p>
+    <div class="logo-wordmark">
+      <svg class="tiny-mark" viewBox="0 0 40 40"><rect x="8" y="7" width="24" height="24" rx="6" fill="none" stroke="#f97316" stroke-width="3"/><path d="M15 15 H25 V25 H15 Z" fill="none" stroke="#38bdf8" stroke-width="2.4"/></svg>
+      Parallax
+    </div>
+    <div class="logo-note">Best for: friendly brand, student-facing surfaces.</div>
+  </div>
+
+  <div class="logo-card" data-choice="component-orbit" onclick="toggleSelect(this)">
+    <div class="logo-stage">
+      <svg width="210" height="170" viewBox="0 0 210 170" role="img" aria-label="Component constellation logo concept">
+        <defs>
+          <linearGradient id="orbitA" x1="40" y1="136" x2="168" y2="34">
+            <stop offset="0" stop-color="#14b8a6"/>
+            <stop offset=".55" stop-color="#eab308"/>
+            <stop offset="1" stop-color="#ef4444"/>
+          </linearGradient>
+        </defs>
+        <ellipse cx="105" cy="84" rx="72" ry="28" fill="none" stroke="url(#orbitA)" stroke-width="5" transform="rotate(-20 105 84)"/>
+        <ellipse cx="105" cy="84" rx="72" ry="28" fill="none" stroke="#60a5fa" stroke-width="4" opacity=".75" transform="rotate(38 105 84)"/>
+        <path d="M82 62 L128 62 L150 84 L128 108 L82 108 L60 84 Z" fill="#020617" stroke="#f8fafc" stroke-width="4" stroke-linejoin="round"/>
+        <circle cx="60" cy="84" r="8" fill="#14b8a6"/>
+        <circle cx="128" cy="62" r="8" fill="#eab308"/>
+        <circle cx="150" cy="84" r="8" fill="#60a5fa"/>
+        <circle cx="82" cy="108" r="8" fill="#ef4444"/>
+        <path d="M82 62 L105 84 L128 62 M60 84 H150 M82 108 L105 84 L128 108" stroke="#94a3b8" stroke-width="2.5" fill="none"/>
+      </svg>
+    </div>
+    <h3>Component Orbit</h3>
+    <p>Clickable parts orbiting a model. It says “interactive system” more than “school app.”</p>
+    <div class="logo-wordmark">
+      <svg class="tiny-mark" viewBox="0 0 40 40"><ellipse cx="20" cy="20" rx="15" ry="6" fill="none" stroke="#14b8a6" stroke-width="2.6" transform="rotate(-22 20 20)"/><path d="M13 15 H27 L32 20 L27 25 H13 L8 20 Z" fill="none" stroke="#f8fafc" stroke-width="2.4"/></svg>
+      Parallax
+    </div>
+    <div class="logo-note">Best for: mature product, technical audience.</div>
+  </div>
+
+  <div class="logo-card" data-choice="guided-beacon" onclick="toggleSelect(this)">
+    <div class="logo-stage">
+      <svg width="210" height="170" viewBox="0 0 210 170" role="img" aria-label="Guided beacon logo concept">
+        <defs>
+          <linearGradient id="beamA" x1="68" y1="32" x2="150" y2="136">
+            <stop offset="0" stop-color="#f8fafc"/>
+            <stop offset=".45" stop-color="#38bdf8"/>
+            <stop offset="1" stop-color="#a3e635"/>
+          </linearGradient>
+        </defs>
+        <path d="M105 24 L157 136 H53 Z" fill="rgba(56,189,248,.12)" stroke="url(#beamA)" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M79 102 H131 M88 84 H122 M97 66 H113" stroke="#e2e8f0" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="105" cy="50" r="12" fill="#f8fafc"/>
+        <path d="M57 136 C78 120 132 120 153 136" fill="none" stroke="#a3e635" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="57" cy="136" r="6" fill="#38bdf8"/>
+        <circle cx="153" cy="136" r="6" fill="#a3e635"/>
+      </svg>
+    </div>
+    <h3>Guided Beacon</h3>
+    <p>A tutor beam revealing steps inside a 3D object. Strongest signal for guided learning and walkthroughs.</p>
+    <div class="logo-wordmark">
+      <svg class="tiny-mark" viewBox="0 0 40 40"><path d="M20 5 L32 33 H8 Z" fill="none" stroke="#38bdf8" stroke-width="3"/><circle cx="20" cy="13" r="3.5" fill="#f8fafc"/></svg>
+      Parallax
+    </div>
+    <div class="logo-note">Best for: tutor personality, learning-room identity.</div>
+  </div>
+</div>

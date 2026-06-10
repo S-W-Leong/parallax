@@ -2,6 +2,7 @@
 
 import type { ArtifactRecord, ChatMessage } from "@/lib/artifacts/artifactTypes";
 import { ExperienceProposalCard } from "./ExperienceProposalCard";
+import { MarkdownMessage } from "./MarkdownMessage";
 
 type ChatThreadProps = {
   messages: ChatMessage[];
@@ -30,10 +31,10 @@ export function ChatThread({ messages, artifacts, trace, onEnterExperience, show
           <div className={`message-row message-${message.role}`} key={message.id}>
             <div className="message-stack">
               <div className="message-bubble">
-                <p>
-                  {message.content}
+                <div className="message-content">
+                  {message.role === "user" ? <p className="message-plain">{message.content}</p> : <MarkdownMessage content={message.content} />}
                   {message.status === "streaming" ? <span className="streaming-cursor" aria-hidden="true" /> : null}
-                </p>
+                </div>
                 {message.status === "stopped" ? <span className="message-status">Stopped</span> : null}
               </div>
               {artifact && showArtifactCards ? (
