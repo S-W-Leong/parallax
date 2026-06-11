@@ -5,7 +5,9 @@ import {
   GUIDE_AGENT_PROMPT,
 } from "./prompts";
 
-const model = process.env.OPENAI_MODEL ?? "gpt-5.4";
+export const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
+
+const model = process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL;
 
 export function makeGuideAgent(tools: Tool[]) {
   return new Agent({

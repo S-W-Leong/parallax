@@ -46,7 +46,7 @@ There is no lint script. Playwright is a dev dependency but there is no configur
 ## Environment
 
 - `OPENAI_API_KEY` (required) -- without it the agent route throws immediately (`requireOpenAiKey` in `lib/agent/routes.ts`).
-- `OPENAI_MODEL` (optional, defaults to `gpt-5.4`).
+- `OPENAI_MODEL` (optional, defaults to `gpt-5.4-mini`).
 - `EXA_API_KEY` (optional) -- source grounding for the research tool; when absent/failing the Guide continues from model knowledge.
 
 ## Architecture
