@@ -429,18 +429,280 @@ function titleFromMessage(content: string): string {
   return compact.length > 48 ? `${compact.slice(0, 45)}...` : compact;
 }
 
+export class InMemoryThreadStore implements ThreadStore {
+  private readonly summariesByUserId = new Map<string, ThreadSummaryRecord[]>();
+  private readonly messagesByThreadId = new Map<string, ChatMessage[]>();
+  private readonly artifactsByThreadId = new Map<string, ArtifactRecord[]>();
+  private readonly agentSessionItemsByThreadId = new Map<string, AgentInputItem[]>();
+
+  async createThread(input: CreateThreadInput): Promise<PersistedThreadSummary> {
+    const record: ThreadSummaryRecord = {
+      PK: threadOwnerKey(input.userId),
+      SK: threadSummaryKey(input.threadId),
+      entityType: "thread",
+      userId: input.userId,
+      threadId: input.threadId,
+      title: input.title,
+      createdAt: input.now,
+      updatedAt: input.now,
+    };
+    this.upsertSummary(record);
+    return toThreadSummary(record);
+  }
+
+  async listThreads(userId: string): Promise<PersistedThreadSummary[]> {
+    return (this.summariesByUserId.get(userId) ?? [])
+      .filter((record) => !record.archivedAt)
+      .map(toThreadSummary)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async loadThread(userId: string, threadId: string): Promise<LoadedThread> {
+    const summary = this.findSummary(userId, threadId);
+    if (summary?.archivedAt) {
+      throw new Error("Thread not found");
+    }
+    if (!summary) {
+      await this.createThread({
+        userId,
+        threadId,
+        title: "New chat",
+        now: new Date().toISOString(),
+      });
+    }
+
+    return {
+      threadId,
+      messages: [...(this.messagesByThreadId.get(threadId) ?? [])],
+      artifacts: [...(this.artifactsByThreadId.get(threadId) ?? [])],
+    };
+  }
+
+  async archiveThread(userId: string, threadId: string, archivedAt: string): Promise<void> {
+    const summary = this.findSummary(userId, threadId);
+    if (!summary) throw new Error("Thread not found");
+    summary.archivedAt = archivedAt;
+  }
+
+  async appendMessage(userId: string, threadId: string, message: ChatMessage): Promise<void> {
+    this.touchThread(userId, threadId, message.createdAt, message.role === "user" ? titleFromMessage(message.content) : undefined);
+    this.messagesByThreadId.set(threadId, [...(this.messagesByThreadId.get(threadId) ?? []), message]);
+  }
+
+  async saveArtifact(userId: string, threadId: string, artifact: ArtifactRecord): Promise<void> {
+    this.touchThread(userId, threadId, artifact.createdAt, artifact.title);
+    const existing = this.artifactsByThreadId.get(threadId) ?? [];
+    this.artifactsByThreadId.set(threadId, [...existing.filter((item) => item.id !== artifact.id), artifact]);
+  }
+
+  async getAgentSessionItems(_userId: string, threadId: string, limit?: number): Promise<AgentInputItem[]> {
+    const items = this.agentSessionItemsByThreadId.get(threadId) ?? [];
+    return limit ? items.slice(-limit) : [...items];
+  }
+
+  async appendAgentSessionItems(userId: string, threadId: string, items: AgentInputItem[]): Promise<void> {
+    if (items.length === 0) return;
+    this.touchThread(userId, threadId, new Date().toISOString());
+    this.agentSessionItemsByThreadId.set(threadId, [...(this.agentSessionItemsByThreadId.get(threadId) ?? []), ...items]);
+  }
+
+  async popAgentSessionItem(_userId: string, threadId: string): Promise<AgentInputItem | undefined> {
+    const items = this.agentSessionItemsByThreadId.get(threadId) ?? [];
+    const item = items.at(-1);
+    this.agentSessionItemsByThreadId.set(threadId, items.slice(0, -1));
+    return item;
+  }
+
+  async clearAgentSession(_userId: string, threadId: string): Promise<void> {
+    this.agentSessionItemsByThreadId.delete(threadId);
+  }
+
+  private findSummary(userId: string, threadId: string): ThreadSummaryRecord | undefined {
+    return (this.summariesByUserId.get(userId) ?? []).find((record) => record.threadId === threadId);
+  }
+
+  private touchThread(userId: string, threadId: string, updatedAt: string, title?: string): void {
+    const existing = this.findSummary(userId, threadId);
+    if (existing) {
+      existing.updatedAt = updatedAt;
+      if (title) existing.title = title;
+      return;
+    }
+
+    this.upsertSummary({
+      PK: threadOwnerKey(userId),
+      SK: threadSummaryKey(threadId),
+      entityType: "thread",
+      userId,
+      threadId,
+      title: title ?? "New chat",
+      createdAt: updatedAt,
+      updatedAt,
+    });
+  }
+
+  private upsertSummary(record: ThreadSummaryRecord): void {
+    const summaries = this.summariesByUserId.get(record.userId) ?? [];
+    this.summariesByUserId.set(record.userId, [...summaries.filter((summary) => summary.threadId !== record.threadId), record]);
+  }
+}
+
+type ThreadStoreOperation<T> = {
+  label: string;
+  primary: () => Promise<T>;
+  fallback: () => Promise<T>;
+};
+
+type StorageFallbackLogger = Pick<typeof console, "warn">;
+
+function isAwsStorageError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { name?: string; Code?: string; code?: string; $metadata?: unknown };
+  const name = record.name ?? record.Code ?? record.code ?? "";
+  return Boolean(
+    record.$metadata ||
+      [
+        "AccessDenied",
+        "AccessDeniedException",
+        "CredentialsProviderError",
+        "ExpiredToken",
+        "ExpiredTokenException",
+        "InvalidAccessKeyId",
+        "ResourceNotFoundException",
+        "UnrecognizedClientException",
+      ].includes(name),
+  );
+}
+
+export class ResilientThreadStore implements ThreadStore {
+  private primaryDisabled = false;
+
+  constructor(
+    private readonly primary: ThreadStore,
+    private readonly fallback: ThreadStore,
+    private readonly logger: StorageFallbackLogger = console,
+  ) {}
+
+  async createThread(input: CreateThreadInput): Promise<PersistedThreadSummary> {
+    return this.withFallback({
+      label: "createThread",
+      primary: () => this.primary.createThread(input),
+      fallback: () => this.fallback.createThread(input),
+    });
+  }
+
+  async listThreads(userId: string): Promise<PersistedThreadSummary[]> {
+    return this.withFallback({
+      label: "listThreads",
+      primary: () => this.primary.listThreads(userId),
+      fallback: () => this.fallback.listThreads(userId),
+    });
+  }
+
+  async loadThread(userId: string, threadId: string): Promise<LoadedThread> {
+    return this.withFallback({
+      label: "loadThread",
+      primary: () => this.primary.loadThread(userId, threadId),
+      fallback: () => this.fallback.loadThread(userId, threadId),
+    });
+  }
+
+  async archiveThread(userId: string, threadId: string, archivedAt: string): Promise<void> {
+    return this.withFallback({
+      label: "archiveThread",
+      primary: () => this.primary.archiveThread(userId, threadId, archivedAt),
+      fallback: () => this.fallback.archiveThread(userId, threadId, archivedAt),
+    });
+  }
+
+  async appendMessage(userId: string, threadId: string, message: ChatMessage): Promise<void> {
+    return this.withFallback({
+      label: "appendMessage",
+      primary: () => this.primary.appendMessage(userId, threadId, message),
+      fallback: () => this.fallback.appendMessage(userId, threadId, message),
+    });
+  }
+
+  async saveArtifact(userId: string, threadId: string, artifact: ArtifactRecord): Promise<void> {
+    return this.withFallback({
+      label: "saveArtifact",
+      primary: () => this.primary.saveArtifact(userId, threadId, artifact),
+      fallback: () => this.fallback.saveArtifact(userId, threadId, artifact),
+    });
+  }
+
+  async getAgentSessionItems(userId: string, threadId: string, limit?: number): Promise<AgentInputItem[]> {
+    return this.withFallback({
+      label: "getAgentSessionItems",
+      primary: () => this.primary.getAgentSessionItems(userId, threadId, limit),
+      fallback: () => this.fallback.getAgentSessionItems(userId, threadId, limit),
+    });
+  }
+
+  async appendAgentSessionItems(userId: string, threadId: string, items: AgentInputItem[]): Promise<void> {
+    return this.withFallback({
+      label: "appendAgentSessionItems",
+      primary: () => this.primary.appendAgentSessionItems(userId, threadId, items),
+      fallback: () => this.fallback.appendAgentSessionItems(userId, threadId, items),
+    });
+  }
+
+  async popAgentSessionItem(userId: string, threadId: string): Promise<AgentInputItem | undefined> {
+    return this.withFallback({
+      label: "popAgentSessionItem",
+      primary: () => this.primary.popAgentSessionItem(userId, threadId),
+      fallback: () => this.fallback.popAgentSessionItem(userId, threadId),
+    });
+  }
+
+  async clearAgentSession(userId: string, threadId: string): Promise<void> {
+    return this.withFallback({
+      label: "clearAgentSession",
+      primary: () => this.primary.clearAgentSession(userId, threadId),
+      fallback: () => this.fallback.clearAgentSession(userId, threadId),
+    });
+  }
+
+  private async withFallback<T>(operation: ThreadStoreOperation<T>): Promise<T> {
+    if (this.primaryDisabled) return operation.fallback();
+
+    try {
+      return await operation.primary();
+    } catch (error) {
+      if (!isAwsStorageError(error)) throw error;
+      this.primaryDisabled = true;
+      this.logger.warn("Parallax AWS thread storage is unavailable; using in-memory thread storage for this runtime.", {
+        operation: operation.label,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return operation.fallback();
+    }
+  }
+}
+
 let singleton: ThreadStore | null = null;
 
 export function getThreadStore(): ThreadStore {
   if (singleton) return singleton;
-  const config = readAwsStorageConfig();
+  let config;
+  try {
+    config = readAwsStorageConfig();
+  } catch (error) {
+    console.warn("Parallax AWS thread storage is not configured; using in-memory thread storage.", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    singleton = new InMemoryThreadStore();
+    return singleton;
+  }
+
   const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({ region: config.region }));
   const s3 = new S3Client({ region: config.region });
-  singleton = new AwsThreadStore({
+  const awsStore = new AwsThreadStore({
     dynamo,
     s3,
     tableName: config.tableName,
     bucketName: config.bucketName,
   });
+  singleton = new ResilientThreadStore(awsStore, new InMemoryThreadStore());
   return singleton;
 }

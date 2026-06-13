@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentInputItem } from "@openai/agents";
 import type { ArtifactRecord, ChatMessage } from "@/lib/artifacts/artifactTypes";
 import { readAwsStorageConfig } from "@/lib/cloud/awsConfig";
-import { AwsThreadStore } from "@/lib/cloud/threadStore";
+import { AwsThreadStore, InMemoryThreadStore, ResilientThreadStore, type ThreadStore } from "@/lib/cloud/threadStore";
 
 const message: ChatMessage = {
   id: "message-1",
@@ -674,5 +674,105 @@ describe("AwsThreadStore", () => {
     expect(archivedDynamo.send).toHaveBeenCalledTimes(1);
     expect(missingDynamo.send).toHaveBeenCalledTimes(1);
     expect(s3.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("InMemoryThreadStore", () => {
+  it("keeps threads, messages, artifacts, and SDK session items available without AWS", async () => {
+    const store = new InMemoryThreadStore();
+
+    const thread = await store.createThread({
+      userId: "demo-1",
+      title: "New chat",
+      now: "2026-06-09T14:00:00.000Z",
+      threadId: "thread-1",
+    });
+    await store.appendMessage("demo-1", "thread-1", message);
+    await store.saveArtifact("demo-1", "thread-1", artifact);
+    await store.appendAgentSessionItems("demo-1", "thread-1", [sessionUserItem, sessionAssistantItem]);
+
+    const threads = await store.listThreads("demo-1");
+    expect(threads).toEqual([
+      {
+        ...thread,
+        title: artifact.title,
+        updatedAt: expect.any(String),
+      },
+    ]);
+    await expect(store.loadThread("demo-1", "thread-1")).resolves.toMatchObject({
+      threadId: "thread-1",
+      messages: [message],
+      artifacts: [artifact],
+    });
+    await expect(store.getAgentSessionItems("demo-1", "thread-1", 1)).resolves.toEqual([sessionAssistantItem]);
+  });
+
+  it("creates an empty local thread when cloud history cannot be hydrated into memory", async () => {
+    const store = new InMemoryThreadStore();
+
+    await expect(store.loadThread("demo-1", "thread-from-cloud")).resolves.toMatchObject({
+      threadId: "thread-from-cloud",
+      messages: [],
+      artifacts: [],
+    });
+    await expect(store.listThreads("demo-1")).resolves.toHaveLength(1);
+  });
+});
+
+describe("ResilientThreadStore", () => {
+  function makeAwsUnavailableError(): Error {
+    return Object.assign(new Error("The security token included in the request is expired"), {
+      name: "ExpiredTokenException",
+      $metadata: { httpStatusCode: 403 },
+    });
+  }
+
+  function makeUnavailablePrimary(): ThreadStore {
+    return {
+      createThread: vi.fn().mockRejectedValue(makeAwsUnavailableError()),
+      listThreads: vi.fn().mockRejectedValue(makeAwsUnavailableError()),
+      loadThread: vi.fn().mockRejectedValue(makeAwsUnavailableError()),
+      archiveThread: vi.fn().mockRejectedValue(makeAwsUnavailableError()),
+      appendMessage: vi.fn().mockRejectedValue(makeAwsUnavailableError()),
+      saveArtifact: vi.fn().mockRejectedValue(makeAwsUnavailableError()),
+      getAgentSessionItems: vi.fn().mockRejectedValue(makeAwsUnavailableError()),
+      appendAgentSessionItems: vi.fn().mockRejectedValue(makeAwsUnavailableError()),
+      popAgentSessionItem: vi.fn().mockRejectedValue(makeAwsUnavailableError()),
+      clearAgentSession: vi.fn().mockRejectedValue(makeAwsUnavailableError()),
+    };
+  }
+
+  it("falls back to in-memory storage when AWS credentials are revoked", async () => {
+    const primary = makeUnavailablePrimary();
+    const fallback = new InMemoryThreadStore();
+    const logger = { warn: vi.fn() };
+    const store = new ResilientThreadStore(primary, fallback, logger);
+
+    await expect(
+      store.createThread({
+        userId: "demo-1",
+        title: "New chat",
+        now: "2026-06-09T14:00:00.000Z",
+        threadId: "thread-1",
+      }),
+    ).resolves.toEqual({
+      id: "thread-1",
+      title: "New chat",
+      createdAt: "2026-06-09T14:00:00.000Z",
+      updatedAt: "2026-06-09T14:00:00.000Z",
+    });
+    await expect(store.listThreads("demo-1")).resolves.toHaveLength(1);
+
+    expect(primary.createThread).toHaveBeenCalledTimes(1);
+    expect(primary.listThreads).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not hide non-AWS storage errors", async () => {
+    const primary = makeUnavailablePrimary();
+    primary.listThreads = vi.fn().mockRejectedValue(new Error("Thread index parser exploded"));
+    const store = new ResilientThreadStore(primary, new InMemoryThreadStore(), { warn: vi.fn() });
+
+    await expect(store.listThreads("demo-1")).rejects.toThrow("Thread index parser exploded");
   });
 });
