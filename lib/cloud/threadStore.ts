@@ -1,6 +1,7 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { InMemoryThreadStore } from "./inMemoryThreadStore";
 import type { AgentInputItem } from "@openai/agents";
 import type { ArtifactRecord, ChatMessage } from "@/lib/artifacts/artifactTypes";
 import { readAwsStorageConfig } from "./awsConfig";
@@ -433,14 +434,13 @@ let singleton: ThreadStore | null = null;
 
 export function getThreadStore(): ThreadStore {
   if (singleton) return singleton;
-  const config = readAwsStorageConfig();
-  const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({ region: config.region }));
-  const s3 = new S3Client({ region: config.region });
-  singleton = new AwsThreadStore({
-    dynamo,
-    s3,
-    tableName: config.tableName,
-    bucketName: config.bucketName,
-  });
+  try {
+    const config = readAwsStorageConfig();
+    const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({ region: config.region }));
+    const s3 = new S3Client({ region: config.region });
+    singleton = new AwsThreadStore({ dynamo, s3, tableName: config.tableName, bucketName: config.bucketName });
+  } catch {
+    singleton = new InMemoryThreadStore();
+  }
   return singleton;
 }
