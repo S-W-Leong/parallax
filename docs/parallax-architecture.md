@@ -130,7 +130,10 @@ flowchart LR
 | Amazon DynamoDB | Stores thread summaries, messages, and artifact metadata. | Vercel API routes |
 | Amazon S3 | Stores generated artifact `html` and `sceneSource` payloads. | Vercel API routes |
 | AWS IAM | Provides scoped access keys for Vercel functions. | Vercel environment variables |
+| In-memory thread store | Temporary fallback when AWS storage is unconfigured or AWS credentials/resources are unavailable. | Vercel function runtime only |
 | OpenAI Agents SDK | Runs the Guide agent for live conversation, plus hidden Builder/Critic workers for artifact generation and QA. | Vercel API routes |
+
+AWS remains the durable persistence layer. After the hackathon/workshop AWS credits and scoped keys expired, the API routes were updated to wrap DynamoDB/S3 with a resilient thread store. If AWS configuration is missing, or if AWS returns credential/service errors such as expired token, access denied, missing key, or missing resource, `getThreadStore()` falls back to an in-memory implementation for that function runtime. This keeps `/api/threads` and `/api/agent` usable instead of returning 500s, but data written during fallback is not durable and previous DynamoDB/S3 history is unavailable until AWS access is restored or replaced.
 
 
 ## Persistence Flow
@@ -139,7 +142,7 @@ flowchart LR
 
 1. Browser creates or reads `parallax.demoUserId` from localStorage.
 2. Browser calls `GET /api/threads?userId=<demo-user-id>`.
-3. Vercel function reads DynamoDB thread summaries for `USER#<demo-user-id>`.
+3. Vercel function reads DynamoDB thread summaries for `USER#<demo-user-id>`, or uses the in-memory fallback if AWS storage is unavailable.
 4. If no thread exists, the browser calls `POST /api/threads` to create one.
 5. Browser loads the newest thread with `GET /api/threads/<threadId>?userId=<demo-user-id>`.
 
@@ -442,7 +445,7 @@ aws s3api put-public-access-block \
 ## Operational Notes
 
 - The demo identity is localStorage-based, not real auth.
-- The workshop AWS account and IAM keys may expire after the event.
+- The workshop AWS account and IAM keys may expire after the event. When they do, Parallax falls back to in-memory thread storage so the demo can still run, but fallback state is temporary and can disappear between serverless runtime instances or deployments.
 - There is no CloudFront layer because artifacts are loaded through server-side S3 reads, not public URLs.
 - There is no queue or async worker; artifact persistence happens inline during the `/api/agent` request.
 - There is no global secondary index yet; the current single-table access pattern supports the hackathon thread list and thread load flows.

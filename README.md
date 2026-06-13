@@ -66,7 +66,7 @@ Add any of these to .env.local if you want extra features:
 | --- | --- |
 | OPENAI_MODEL | Choose which model to use (defaults to `gpt-5.4-mini`). |
 | EXA_API_KEY | Lets the planner pull in real sources when designing a lesson. Without it, the app just uses the model's own knowledge. |
-| AWS_REGION, PARALLAX_THREADS_TABLE, PARALLAX_ARTIFACT_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY | Save your chats and learning rooms to the cloud (DynamoDB + S3). Without them, everything still works and is kept in your browser. |
+| AWS_REGION, PARALLAX_THREADS_TABLE, PARALLAX_ARTIFACT_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY | Save your chats and learning rooms to the cloud (DynamoDB + S3). Without them, or after temporary AWS credits/keys expire, the app falls back to temporary in-memory thread storage. |
 
 Recommended OpenAI model choices:
 
